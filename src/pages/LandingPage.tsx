@@ -48,7 +48,7 @@ export default function LandingPage() {
           >
             <img
               src="https://cdn.testbook.com/1760528149448-Header_Logo1.png/1760528151.png"
-              alt="LegalElite Logo"
+              alt="LegalLadder Logo"
               className="h-8"
             />
           </motion.div>
@@ -324,7 +324,7 @@ export default function LandingPage() {
             <div className="flex items-center">
               <img
                 src="https://cdn.testbook.com/1760528149448-Header_Logo1.png/1760528151.png"
-                alt="LegalElite - Premium Legal Job Portal"
+                alt="LegalLadder - Premium Legal Job Portal"
                 className="h-8 md:h-10 w-auto object-contain transition-opacity duration-300 hover:opacity-80"
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
@@ -336,9 +336,9 @@ export default function LandingPage() {
               <div 
                 className="text-2xl font-bold bg-gradient-to-r from-legal-gold-500 to-legal-gold-300 bg-clip-text text-transparent hidden"
                 role="img"
-                aria-label="LegalElite"
+                aria-label="LegalLadder"
               >
-                LegalElite
+                LegalLadder
               </div>
             </div>
             <div className="flex gap-8 text-gray-400">

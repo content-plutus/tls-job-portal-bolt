@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FileText, Bookmark, TrendingUp, Award, LogOut, User } from 'lucide-react';
+import { FileText, Bookmark, Award, LogOut, User } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -87,9 +87,12 @@ export default function UserDashboard() {
       <LegalBackground3D />
       <nav className="relative z-10 bg-white/5 backdrop-blur-lg border-b border-legal-gold-500/20">
         <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="text-2xl font-bold bg-gradient-to-r from-legal-gold-500 to-legal-gold-300 bg-clip-text text-transparent">
-            LegalJobs
-          </div>
+          <img
+            src="https://cdn.testbook.com/1760528149448-Header_Logo1.png/1760528151.png"
+            alt="LegalLadder Logo"
+            className="h-8 cursor-pointer"
+            onClick={() => navigate('/')}
+          />
           <div className="flex items-center gap-4">
             <Button variant="ghost" onClick={() => navigate('/jobs')} className="text-white">
               Browse Jobs
@@ -189,37 +192,6 @@ export default function UserDashboard() {
           </motion.div>
         </div>
 
-        {profile && profile.profile_completion < 100 && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4 }}
-            className="mb-8"
-          >
-            <Card glass className="p-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <TrendingUp className="w-8 h-8 text-cyan-400" />
-                  <div>
-                    <h3 className="text-xl font-bold text-white mb-1">Complete Your Profile</h3>
-                    <p className="text-gray-300 text-sm">
-                      Your profile is {profile.profile_completion}% complete. Boost your chances by completing it!
-                    </p>
-                  </div>
-                </div>
-                <Button onClick={() => navigate('/profile')}>Complete Profile</Button>
-              </div>
-              <div className="mt-4">
-                <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 transition-all duration-300"
-                    style={{ width: `${profile.profile_completion}%` }}
-                  />
-                </div>
-              </div>
-            </Card>
-          </motion.div>
-        )}
 
         <motion.div
           initial={{ opacity: 0, y: 20 }}

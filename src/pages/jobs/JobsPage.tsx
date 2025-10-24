@@ -291,7 +291,7 @@ export default function JobsPage() {
           >
             <img
               src="https://cdn.testbook.com/1760528149448-Header_Logo1.png/1760528151.png"
-              alt="LegalElite Logo"
+              alt="LegalLadder Logo"
               className="h-8"
             />
           </button>
