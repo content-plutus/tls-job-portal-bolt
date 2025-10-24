@@ -27,12 +27,14 @@ Your CSV file must have the following columns (header row required):
 - `compensation` (optional) - Salary or hourly rate
 - `category` (optional) - Practice area (e.g., Corporate, Litigation, IP)
 - `description` (required) - Full job description
+- `tier_requirement` (optional) - Subscription tier required: 'free', 'silver', 'gold', or 'platinum' (defaults to 'free' if not provided or invalid)
 
 ### Example CSV:
 ```csv
-title,company,location,job_type,posted_by,posted_date,deadline,compensation,category,description
-Senior Attorney,Smith & Associates,New York NY,Full-time,John Smith,2025-10-01,2025-11-01,$150000-$180000/year,Corporate,Seeking an experienced corporate attorney...
-Junior Paralegal,Johnson Law,Remote,Part-time,Sarah Johnson,2025-10-05,2025-10-30,$25/hour,Litigation,Entry-level paralegal position...
+title,company,location,job_type,posted_by,posted_date,deadline,compensation,category,description,tier_requirement
+Senior Attorney,Smith & Associates,New York NY,Full-time,John Smith,2025-10-01,2025-11-01,$150000-$180000/year,Corporate,Seeking an experienced corporate attorney...,gold
+Junior Paralegal,Johnson Law,Remote,Part-time,Sarah Johnson,2025-10-05,2025-10-30,$25/hour,Litigation,Entry-level paralegal position...,free
+Partner Position,Elite Law Firm,New York,Full-time,HR Dept,2025-10-10,2025-12-01,$300000+/year,Corporate,Exclusive partner-track opportunity...,platinum
 ```
 
 ## How to Use
@@ -66,7 +68,7 @@ The script will display:
 2. **Validates Data**: Checks for required fields (title, company, description)
 3. **Clears Old Data**: Removes all existing jobs from the database
 4. **Transforms Data**: Converts CSV rows to database format with defaults:
-   - `tier_requirement`: 'free'
+   - `tier_requirement`: From CSV column (free/silver/gold/platinum) or defaults to 'free'
    - `status`: 'active'
    - `source`: 'manual'
    - `views_count`: 0
@@ -123,7 +125,10 @@ To re-import data:
 
 ## Notes
 
-- The script sets all imported jobs to `tier_requirement: 'free'` by default
+- Jobs can be assigned different tiers via the `tier_requirement` column in CSV (free/silver/gold/platinum)
+- If `tier_requirement` is missing or invalid, it defaults to 'free'
 - All jobs are set to `status: 'active'` so they appear immediately
+- Free users can only see jobs with `tier_requirement: 'free'`
+- Premium users (silver/gold/platinum) can see jobs at their tier level and below
 - Existing database indexes will optimize search and filtering performance
 - Row Level Security (RLS) policies remain active and functional

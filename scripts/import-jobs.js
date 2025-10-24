@@ -59,6 +59,11 @@ function parseDate(dateString) {
 }
 
 function transformCsvRowToJob(row) {
+  // Validate and normalize tier_requirement from CSV
+  const validTiers = ['free', 'silver', 'gold', 'platinum'];
+  const csvTier = row.tier_requirement?.trim().toLowerCase();
+  const tier = validTiers.includes(csvTier) ? csvTier : 'free';
+
   return {
     title: row.title?.trim() || '',
     company: row.company?.trim() || '',
@@ -70,7 +75,7 @@ function transformCsvRowToJob(row) {
     compensation: row.compensation?.trim() || null,
     category: row.category?.trim() || null,
     description: row.description?.trim() || '',
-    tier_requirement: 'free',
+    tier_requirement: tier,
     status: 'active',
     source: 'manual',
     views_count: 0,
