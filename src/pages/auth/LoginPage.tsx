@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
-import { Mail, Lock, ArrowLeft, Eye, EyeOff, Chrome } from 'lucide-react';
+import { Mail, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { GOOGLE_FORM_URL } from '../../config/constants';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
@@ -20,7 +20,6 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [socialLoading, setSocialLoading] = useState<'google' | null>(null);
 const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     defaultValues: {
       email: localStorage.getItem('rememberedEmail') || '',
@@ -96,25 +95,6 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     }
   };
 
-  const handleGoogleLogin = async () => {
-    try {
-      setSocialLoading('google');
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: `${window.location.origin}/dashboard`,
-        },
-      });
-
-      if (error) {
-        throw error;
-      }
-    } catch (error: any) {
-      console.error('Google login error:', error);
-      toast.error(error.message || 'Failed to login with Google. Please try again.');
-      setSocialLoading(null);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-legal-navy-900 via-legal-navy-800 to-legal-slate-900 flex items-center justify-center p-6">
@@ -247,28 +227,6 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
               aria-label="Sign in to your account"
             >
               Sign In
-            </Button>
-
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-legal-gold-500/20"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-legal-navy-900 text-gray-400">Or continue with</span>
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleGoogleLogin}
-              isLoading={socialLoading === 'google'}
-              disabled={socialLoading !== null}
-              className="w-full"
-              aria-label="Sign in with Google"
-            >
-              <Chrome className="w-5 h-5 mr-2" />
-              Sign in with Google
             </Button>
 
             <p className="text-center text-sm text-gray-400">

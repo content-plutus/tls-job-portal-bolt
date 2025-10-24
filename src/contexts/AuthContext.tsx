@@ -45,9 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const checkTimeout = setTimeout(() => {
-      console.warn('Auth check timed out after 8 seconds');
+      console.warn('Auth check timed out after 30 seconds');
       setLoading(false);
-    }, 8000);
+    }, 30000);
 
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -74,11 +74,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function fetchUserData(userId: string) {
     const fetchTimeout = setTimeout(() => {
-      console.warn('User data fetch timed out after 6 seconds');
+      console.warn('User data fetch timed out after 20 seconds');
       setUser(null);
       setProfile(null);
       setLoading(false);
-    }, 6000);
+    }, 20000);
 
     try {
       const { data: userData, error: userError } = await supabase

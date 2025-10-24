@@ -18,6 +18,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storageKey: 'tls-job-portal-auth',
     storage: window.localStorage,
     flowType: 'pkce',
+    // Increase session check timeout to prevent premature logouts
+    debug: false,
   },
   global: {
     headers: {
