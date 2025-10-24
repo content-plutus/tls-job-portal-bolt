@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabase';
 import Button from '../../components/ui/Button';
 import Card from '../../components/ui/Card';
 import ParticleBackground from '../../components/3d/ParticleBackground';
+import { GOOGLE_FORM_URL } from '../../config/constants';
 
 interface RegisterForm {
   firstName: string;
@@ -24,6 +25,11 @@ export default function RegisterPage() {
   const { register, handleSubmit, watch, formState: { errors } } = useForm<RegisterForm>();
 
   const password = watch('password');
+
+  // Redirect all register traffic to Google Form for manual onboarding
+  if (typeof window !== 'undefined') {
+    window.location.replace(GOOGLE_FORM_URL);
+  }
 
   const onSubmit = async (data: RegisterForm) => {
     if (data.password !== data.confirmPassword) {

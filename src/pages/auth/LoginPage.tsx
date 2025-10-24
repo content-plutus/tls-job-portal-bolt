@@ -3,10 +3,10 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
 import { Mail, Lock, ArrowLeft, Eye, EyeOff, Chrome } from 'lucide-react';
+import { GOOGLE_FORM_URL } from '../../config/constants';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
 import Card from '../../components/ui/Card';
 import ParticleBackground from '../../components/3d/ParticleBackground';
 
@@ -21,15 +21,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | null>(null);
-  const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<LoginForm>({
+const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     defaultValues: {
       email: localStorage.getItem('rememberedEmail') || '',
       rememberMe: localStorage.getItem('rememberedEmail') ? true : false,
     },
   });
 
-  const emailValue = watch('email');
-  const rememberMeValue = watch('rememberMe');
 
   useEffect(() => {
     const emailInput = document.getElementById('email-input') as HTMLInputElement;
@@ -42,8 +40,8 @@ export default function LoginPage() {
     setLoading(true);
     const loginTimeout = setTimeout(() => {
       setLoading(false);
-      toast.error('Login is taking too long. Please check your connection and try again.');
-    }, 15000);
+      toast.error('Login timed out after 20 seconds. Please check your connection and try again.');
+    }, 20000);
 
     try {
       if (data.rememberMe) {
@@ -52,96 +50,46 @@ export default function LoginPage() {
         localStorage.removeItem('rememberedEmail');
       }
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      // Explicit timeout race for the auth call to avoid rare hanging promises
+      const authPromise = supabase.auth.signInWithPassword({
         email: data.email.trim().toLowerCase(),
         password: data.password,
       });
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('login_request_timeout')), 15000));
+      const authResult = (await Promise.race([authPromise, timeoutPromise])) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
+
+      const { data: authData, error: authError } = authResult || ({} as any);
 
       if (authError) {
         clearTimeout(loginTimeout);
-        if (authError.message.includes('Invalid login credentials')) {
+        if (authError.message?.includes('Invalid login credentials')) {
           throw new Error('Invalid email or password. Please check your credentials and try again.');
-        } else if (authError.message.includes('Email not confirmed')) {
+        } else if (authError.message?.includes('Email not confirmed')) {
           throw new Error('Please verify your email address before logging in.');
-        } else if (authError.message.includes('Too many requests')) {
+        } else if (authError.message?.includes('Too many requests')) {
           throw new Error('Too many login attempts. Please wait a few minutes and try again.');
         }
         throw authError;
       }
 
-      if (authData.user) {
-        let userData = null;
-        let retries = 0;
-        const maxRetries = 3;
-
-        while (!userData && retries < maxRetries) {
-          const { data: fetchedData, error: fetchError } = await supabase
-            .from('users')
-            .select('role, subscription_tier')
-            .eq('id', authData.user.id)
-            .maybeSingle();
-
-          if (fetchError) {
-            console.error('Error fetching user data:', fetchError);
-            if (fetchError.message.includes('RLS')) {
-              console.error('RLS policy blocked user fetch');
-            }
-          }
-
-          if (fetchedData) {
-            userData = fetchedData;
-            break;
-          }
-
-          retries++;
-          if (retries < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-          }
-        }
-
-        if (!userData) {
-          const { data: insertedData, error: insertError } = await supabase
-            .from('users')
-            .insert({
-              id: authData.user.id,
-              email: authData.user.email,
-              password_hash: '',
-              role: 'job_seeker',
-              subscription_tier: 'free',
-              is_verified: authData.user.email_confirmed_at !== null,
-              is_active: true
-            })
-            .select('role, subscription_tier')
-            .maybeSingle();
-
-          if (insertError) {
-            console.error('Error inserting user record:', insertError);
-            if (insertError.message.includes('RLS') || insertError.message.includes('policy')) {
-              throw new Error('Unable to create user profile. Please contact support.');
-            }
-          }
-
-          if (insertedData) {
-            userData = insertedData;
-          } else {
-            const { data: newUserData } = await supabase
-              .from('users')
-              .select('role, subscription_tier')
-              .eq('id', authData.user.id)
-              .maybeSingle();
-
-            userData = newUserData;
-          }
-        }
-
-        clearTimeout(loginTimeout);
-        toast.success('Welcome back!');
-        navigate('/dashboard');
+      if (!authData?.user) {
+        throw new Error('Login failed unexpectedly. Please try again.');
       }
+
+      // Verify session established
+      await supabase.auth.getSession();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+
+      clearTimeout(loginTimeout);
+      toast.success('Welcome back!');
+      navigate('/dashboard');
     } catch (error: any) {
       clearTimeout(loginTimeout);
       console.error('Login error:', error);
-      toast.error(error.message || 'An unexpected error occurred. Please try again.');
+      const message = error?.message === 'login_request_timeout'
+        ? 'Login is taking longer than expected. Please try again.'
+        : (error?.message || 'An unexpected error occurred. Please try again.');
+      toast.error(message);
     } finally {
       clearTimeout(loginTimeout);
       setLoading(false);
@@ -325,13 +273,14 @@ export default function LoginPage() {
 
             <p className="text-center text-sm text-gray-400">
               Don't have an account?{' '}
-              <Link
-                to="/register"
+              <a
+                href={GOOGLE_FORM_URL}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-legal-gold-400 hover:text-legal-gold-300 font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-legal-gold-500 rounded px-1"
-                tabIndex={0}
               >
                 Sign up
-              </Link>
+              </a>
             </p>
           </form>
 

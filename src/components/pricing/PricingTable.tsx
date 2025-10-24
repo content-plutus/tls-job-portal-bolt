@@ -4,7 +4,7 @@ import { Check, Zap, Crown, Star, Calendar, TrendingDown } from 'lucide-react';
 import Card from '../ui/Card';
 import Button from '../ui/Button';
 
-const GOOGLE_FORM_URL = 'https://docs.google.com/forms/d/e/1FAIpQLSeq40J_9Hmh6zf6M787qOBn1mewpbELAECNRsqTDvMmRiv4ng/viewform';
+import { GOOGLE_FORM_URL } from '../../config/constants';
 
 interface PricingTier {
   name: string;

@@ -34,9 +34,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function checkUser() {
     const checkTimeout = setTimeout(() => {
-      console.warn('Auth check timed out after 10 seconds');
+      console.warn('Auth check timed out after 8 seconds');
       setLoading(false);
-    }, 10000);
+    }, 8000);
 
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -50,11 +50,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (session?.user) {
         await fetchUserData(session.user.id);
-        clearTimeout(checkTimeout);
       } else {
-        clearTimeout(checkTimeout);
         setLoading(false);
       }
+      clearTimeout(checkTimeout);
     } catch (error) {
       console.error('Error checking user:', error);
       clearTimeout(checkTimeout);
@@ -64,11 +63,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function fetchUserData(userId: string) {
     const fetchTimeout = setTimeout(() => {
-      console.warn('User data fetch timed out after 8 seconds');
+      console.warn('User data fetch timed out after 6 seconds');
       setUser(null);
       setProfile(null);
       setLoading(false);
-    }, 8000);
+    }, 6000);
 
     try {
       const { data: userData, error: userError } = await supabase
@@ -79,8 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userError) {
         console.error('Error fetching user:', userError);
-        if (userError.message.includes('RLS') || userError.message.includes('policy')) {
-          console.error('RLS policy may be blocking user access');
+        if (userError.code === 'PGRST301' || userError.message.includes('JWT')) {
+          console.warn('JWT expired or invalid; signing out');
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch (e) { console.warn('Local signOut failed', e); }
         }
         clearTimeout(fetchTimeout);
         setUser(null);
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!userData) {
-        console.log('No user data found for authenticated user');
+        console.warn('User row not found after auth; may need manual creation');
         clearTimeout(fetchTimeout);
         setUser(null);
         setProfile(null);
@@ -110,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       clearTimeout(fetchTimeout);
       setUser(userData);
-      setProfile(profileData);
+      setProfile(profileData || null);
     } catch (error) {
       console.error('Error fetching user data:', error);
       clearTimeout(fetchTimeout);

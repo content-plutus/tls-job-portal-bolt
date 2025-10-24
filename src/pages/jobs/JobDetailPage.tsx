@@ -18,6 +18,8 @@ export default function JobDetailPage() {
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [coverLetter, setCoverLetter] = useState('');
   const [applying, setApplying] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -36,6 +38,16 @@ export default function JobDetailPage() {
       if (error) throw error;
       setJob(data);
 
+      if (user) {
+        const { data: saved, error: savedErr } = await supabase
+          .from('saved_jobs')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('job_id', id)
+          .maybeSingle();
+        if (!savedErr) setIsSaved(!!saved);
+      }
+
       await supabase
         .from('jobs')
         .update({ views_count: (data.views_count || 0) + 1 })
@@ -46,6 +58,34 @@ export default function JobDetailPage() {
       navigate('/jobs');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function toggleSave() {
+    if (!user || !id) {
+      navigate('/login');
+      return;
+    }
+    if (saving) return;
+    setSaving(true);
+    try {
+      if (isSaved) {
+        const { error } = await supabase
+          .from('saved_jobs')
+          .delete()
+          .eq('user_id', user.id)
+          .eq('job_id', id);
+        if (error) throw error;
+        setIsSaved(false);
+      } else {
+        const { error } = await supabase
+          .from('saved_jobs')
+          .insert({ user_id: user.id, job_id: id });
+        if (error) throw error;
+        setIsSaved(true);
+      }
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -127,8 +167,13 @@ export default function JobDetailPage() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button className="p-3 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-red-400 transition-colors">
-                    <Heart className="w-5 h-5" />
+                  <button
+                    onClick={toggleSave}
+                    disabled={saving}
+                    className={`p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors ${isSaved ? 'text-legal-red-400' : 'text-gray-300 hover:text-red-400'}`}
+                    aria-label={isSaved ? 'Unsave job' : 'Save job'}
+                  >
+                    <Heart className="w-5 h-5" fill={isSaved ? 'currentColor' : 'none'} />
                   </button>
                   <button
                     onClick={() => {
