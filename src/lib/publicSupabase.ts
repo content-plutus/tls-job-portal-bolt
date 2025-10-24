@@ -1,7 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
-const url = import.meta.env.VITE_SUPABASE_URL as string;
-const anon = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+const url = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder.supabase.co';
+const anon = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-key';
+
+// Check if we have real environment variables
+export const hasPublicSupabaseConfig = !!(import.meta.env.VITE_SUPABASE_URL && import.meta.env.VITE_SUPABASE_ANON_KEY);
+
+if (!hasPublicSupabaseConfig) {
+  console.warn('⚠️ Public Supabase environment variables not configured. Using placeholder client.');
+}
 
 // Storage shim so this client never persists or reads any session
 const noStorage = {

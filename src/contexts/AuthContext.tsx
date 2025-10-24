@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, hasSupabaseConfig } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { User, Profile } from '../types';
 
@@ -15,6 +15,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, setUser, setProfile, setLoading } = useAuthStore();
 
   useEffect(() => {
+    if (!hasSupabaseConfig) {
+      console.warn('⚠️ Running in demo mode - Supabase not configured');
+      setLoading(false);
+      return;
+    }
+
     checkUser();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
@@ -33,6 +39,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function checkUser() {
+    if (!hasSupabaseConfig) {
+      setLoading(false);
+      return;
+    }
+
     const checkTimeout = setTimeout(() => {
       console.warn('Auth check timed out after 8 seconds');
       setLoading(false);
