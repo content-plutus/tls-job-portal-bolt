@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
+import { Search, MapPin, Briefcase, DollarSign, Heart, Calendar, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { publicSupabase } from '../../lib/publicSupabase';
 import { Job, SubscriptionTier } from '../../types';
@@ -20,14 +20,6 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [uiError, setUiError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState('');
-  const [selectedJobType, setSelectedJobType] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [selectedExperience, setSelectedExperience] = useState('');
-  const [selectedOrgType, setSelectedOrgType] = useState('');
-  const [selectedSalaryRange, setSelectedSalaryRange] = useState('');
-  const [barRegistrationRequired, setBarRegistrationRequired] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
   // Saved jobs state (job_id set)
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
@@ -43,34 +35,6 @@ export default function JobsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const displayedJobs = isFreeUser ? filteredJobs.slice(0, FREE_JOB_LIMIT) : filteredJobs;
   const hiddenJobsCount = isFreeUser ? Math.max(0, totalJobCount - FREE_JOB_LIMIT) : 0;
-
-  // Indian-specific filter options
-  const indianCities = [
-    'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Kolkata', 'Pune', 'Hyderabad',
-    'Ahmedabad', 'Jaipur', 'Lucknow', 'Chandigarh', 'Kochi', 'Indore', 'Bhopal',
-    'Gurgaon', 'Noida', 'Ghaziabad', 'Faridabad', 'Remote'
-  ];
-
-  const practiceAreas = [
-    'Corporate Law', 'Litigation', 'Intellectual Property', 'Tax Law',
-    'Banking & Finance', 'Real Estate', 'Employment Law', 'Criminal Law',
-    'Family Law', 'Constitutional Law', 'Environmental Law', 'Cyber Law',
-    'Securities Law', 'Mergers & Acquisitions', 'Arbitration & Mediation'
-  ];
-
-  const experienceLevels = [
-    'Fresher (0-1 years)', 'Junior (1-3 years)', 'Mid-level (3-7 years)', 'Senior (7+ years)'
-  ];
-
-  const organizationTypes = [
-    'Law Firms', 'Corporate Legal Departments', 'Government', 'NGOs',
-    'Legal Tech Companies', 'Consulting Firms', 'Banks & Financial Institutions'
-  ];
-
-  const salaryRanges = [
-    '₹2-5 Lakhs', '₹5-10 Lakhs', '₹10-20 Lakhs', '₹20-50 Lakhs',
-    '₹50 Lakhs - 1 Crore', '₹1+ Crore', 'Not Disclosed'
-  ];
   const tierOrder: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
   const userTier = user?.subscription_tier || 'free';
   const userTierIndex = tierOrder.indexOf(userTier);
@@ -86,7 +50,7 @@ export default function JobsPage() {
 
   useEffect(() => {
     filterJobs();
-  }, [jobs, searchQuery, selectedLocation, selectedJobType, selectedCategory, selectedExperience, selectedOrgType, selectedSalaryRange, barRegistrationRequired]);
+  }, [jobs, searchQuery]);
 
   function applyTierFilter(data: Job[]) {
     const effectiveTierIndex = user ? userTierIndex : 0;
@@ -172,60 +136,17 @@ export default function JobsPage() {
     let filtered = [...jobs];
 
     if (searchQuery) {
+      const query = searchQuery.toLowerCase();
       filtered = filtered.filter(job =>
-        job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.location?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    if (selectedLocation) {
-      filtered = filtered.filter(job => job.location?.includes(selectedLocation));
-    }
-
-    if (selectedJobType) {
-      filtered = filtered.filter(job => job.job_type === selectedJobType);
-    }
-
-    if (selectedCategory) {
-      filtered = filtered.filter(job => job.category === selectedCategory);
-    }
-
-    if (selectedExperience) {
-      // This would need to be implemented based on job data structure
-      // For now, we'll filter based on job title or description containing experience keywords
-      const expKeywords = selectedExperience.toLowerCase();
-      filtered = filtered.filter(job => 
-        job.title.toLowerCase().includes(expKeywords) || 
-        job.description.toLowerCase().includes(expKeywords)
-      );
-    }
-
-    if (selectedOrgType) {
-      filtered = filtered.filter(job => 
-        job.company.toLowerCase().includes(selectedOrgType.toLowerCase()) ||
-        job.description.toLowerCase().includes(selectedOrgType.toLowerCase())
-      );
-    }
-
-    if (selectedSalaryRange && selectedSalaryRange !== 'Not Disclosed') {
-      filtered = filtered.filter(job => 
-        job.compensation && job.compensation.includes('₹')
+        job.title.toLowerCase().includes(query) ||
+        job.company.toLowerCase().includes(query) ||
+        job.location?.toLowerCase().includes(query) ||
+        job.category?.toLowerCase().includes(query) ||
+        job.description.toLowerCase().includes(query)
       );
     }
 
     setFilteredJobs(filtered);
-  }
-
-  function clearAllFilters() {
-    setSearchQuery('');
-    setSelectedLocation('');
-    setSelectedJobType('');
-    setSelectedCategory('');
-    setSelectedExperience('');
-    setSelectedOrgType('');
-    setSelectedSalaryRange('');
-    setBarRegistrationRequired('');
   }
 
   async function loadSavedJobs() {
@@ -346,168 +267,16 @@ export default function JobsPage() {
         )}
 
         <div className="mb-8">
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search legal jobs by title, company, or location in India..."
-                className="w-full pl-12 pr-4 py-4 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-              />
-            </div>
-            <Button
-              variant="outline"
-              onClick={() => setShowFilters(!showFilters)}
-              className="border-white/30 text-white hover:bg-white/10"
-            >
-              <Filter className="w-5 h-5 mr-2" />
-              Filters
-            </Button>
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search jobs by title, company, location, category..."
+              className="w-full pl-12 pr-4 py-4 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            />
           </div>
-
-          {showFilters && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="mt-4 p-6 rounded-xl bg-white/10 backdrop-blur-lg border border-white/20"
-            >
-              <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">City/Location</label>
-                  <select
-                    value={selectedLocation}
-                    onChange={(e) => setSelectedLocation(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">All Locations</option>
-                    {indianCities.map(city => (
-                      <option key={city} value={city}>{city}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Practice Area</label>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">All Practice Areas</option>
-                    {practiceAreas.map(area => (
-                      <option key={area} value={area}>{area}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Experience Level</label>
-                  <select
-                    value={selectedExperience}
-                    onChange={(e) => setSelectedExperience(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">All Experience Levels</option>
-                    {experienceLevels.map(level => (
-                      <option key={level} value={level}>{level}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Job Type</label>
-                  <select
-                    value={selectedJobType}
-                    onChange={(e) => setSelectedJobType(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">All Job Types</option>
-                    <option value="Full-time">Full-time</option>
-                    <option value="Part-time">Part-time</option>
-                    <option value="Contract">Contract</option>
-                    <option value="Internship">Internship</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid md:grid-cols-3 lg:grid-cols-4 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Organization Type</label>
-                  <select
-                    value={selectedOrgType}
-                    onChange={(e) => setSelectedOrgType(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">All Organizations</option>
-                    {organizationTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Salary Range (INR)</label>
-                  <select
-                    value={selectedSalaryRange}
-                    onChange={(e) => setSelectedSalaryRange(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">All Salary Ranges</option>
-                    {salaryRanges.map(range => (
-                      <option key={range} value={range}>{range}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Bar Registration</label>
-                  <select
-                    value={barRegistrationRequired}
-                    onChange={(e) => setBarRegistrationRequired(e.target.value)}
-                    className="w-full px-4 py-3 rounded-lg bg-white/5 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                  >
-                    <option value="">Any</option>
-                    <option value="required">Required</option>
-                    <option value="not-required">Not Required</option>
-                  </select>
-                </div>
-
-                <div className="flex items-end">
-                  <Button
-                    variant="outline"
-                    onClick={clearAllFilters}
-                    className="w-full border-legal-gold-500/30 text-legal-gold-400 hover:bg-legal-gold-500/10"
-                  >
-                    Clear All Filters
-                  </Button>
-                </div>
-              </div>
-
-              {!user && filteredJobs.length > FREE_JOB_LIMIT && (
-                <div className="mt-4 p-4 bg-legal-gold-500/10 border border-legal-gold-500/30 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <Lock className="w-5 h-5 text-legal-gold-400" />
-                      <div>
-                        <p className="text-white font-medium">
-                          {hiddenJobsCount} more jobs available
-                        </p>
-                        <p className="text-legal-slate-300 text-sm">
-                          Sign up to view all {totalJobCount}+ job opportunities
-                        </p>
-                      </div>
-                    </div>
-                    <Button onClick={() => window.open(GOOGLE_FORM_URL, '_blank', 'noopener,noreferrer')} size="sm">
-                      Sign Up Free
-                    </Button>
-                  </div>
-                </div>
-              )}
-
-            </motion.div>
-          )}
         </div>
 
         {loading ? (
