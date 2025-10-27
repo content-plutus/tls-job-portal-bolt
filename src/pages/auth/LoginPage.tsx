@@ -39,8 +39,8 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     setLoading(true);
     const loginTimeout = setTimeout(() => {
       setLoading(false);
-      toast.error('Login timed out after 20 seconds. Please check your connection and try again.');
-    }, 20000);
+      toast.error('Login timed out after 45 seconds. Please check your connection and try again.');
+    }, 45000);
 
     try {
       if (data.rememberMe) {
@@ -49,15 +49,10 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
         localStorage.removeItem('rememberedEmail');
       }
 
-      // Explicit timeout race for the auth call to avoid rare hanging promises
-      const authPromise = supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: data.email.trim().toLowerCase(),
         password: data.password,
       });
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('login_request_timeout')), 15000));
-      const authResult = (await Promise.race([authPromise, timeoutPromise])) as Awaited<ReturnType<typeof supabase.auth.signInWithPassword>>;
-
-      const { data: authData, error: authError } = authResult || ({} as any);
 
       if (authError) {
         clearTimeout(loginTimeout);
@@ -75,19 +70,16 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
         throw new Error('Login failed unexpectedly. Please try again.');
       }
 
-      // Verify session established
       await supabase.auth.getSession();
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       clearTimeout(loginTimeout);
       toast.success('Welcome back!');
       navigate('/dashboard');
-    } catch (error: any) {
+    } catch (error) {
       clearTimeout(loginTimeout);
       console.error('Login error:', error);
-      const message = error?.message === 'login_request_timeout'
-        ? 'Login is taking longer than expected. Please try again.'
-        : (error?.message || 'An unexpected error occurred. Please try again.');
+      const message = (error as Error)?.message || 'An unexpected error occurred. Please try again.';
       toast.error(message);
     } finally {
       clearTimeout(loginTimeout);

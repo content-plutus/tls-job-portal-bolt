@@ -23,7 +23,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     checkUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log(`[Auth Event] ${event} at ${new Date().toISOString()}`, {
+        hasSession: !!session,
+        userId: session?.user?.id
+      });
+      
       if (session?.user) {
         await fetchUserData(session.user.id);
       } else {
@@ -45,9 +50,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const checkTimeout = setTimeout(() => {
-      console.warn('Auth check timed out after 30 seconds');
+      console.warn('Auth check timed out after 45 seconds');
       setLoading(false);
-    }, 30000);
+    }, 45000);
 
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
@@ -72,13 +77,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function fetchUserData(userId: string) {
+  async function fetchUserData(userId: string, retryCount = 0) {
+    const maxRetries = 2;
     const fetchTimeout = setTimeout(() => {
-      console.warn('User data fetch timed out after 20 seconds');
+      console.warn('User data fetch timed out after 45 seconds');
       setUser(null);
       setProfile(null);
       setLoading(false);
-    }, 20000);
+    }, 45000);
 
     try {
       const { data: userData, error: userError } = await supabase
@@ -89,10 +95,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (userError) {
         console.error('Error fetching user:', userError);
+        
+        if ((userError.code === 'PGRST301' || userError.message.includes('JWT')) && retryCount < maxRetries) {
+          console.warn(`JWT error detected; attempting token refresh (attempt ${retryCount + 1}/${maxRetries})...`);
+          
+          try {
+            const { error: refreshError } = await supabase.auth.refreshSession();
+            
+            if (refreshError) {
+              console.error('Token refresh failed:', refreshError);
+              await supabase.auth.signOut({ scope: 'local' });
+              clearTimeout(fetchTimeout);
+              setUser(null);
+              setProfile(null);
+              setLoading(false);
+              return;
+            }
+            
+            console.log('Token refreshed successfully, retrying user fetch...');
+            clearTimeout(fetchTimeout);
+            return fetchUserData(userId, retryCount + 1);
+          } catch (refreshErr) {
+            console.error('Error during token refresh:', refreshErr);
+            await supabase.auth.signOut({ scope: 'local' });
+            clearTimeout(fetchTimeout);
+            setUser(null);
+            setProfile(null);
+            setLoading(false);
+            return;
+          }
+        }
+        
         if (userError.code === 'PGRST301' || userError.message.includes('JWT')) {
-          console.warn('JWT expired or invalid; signing out');
+          console.warn('JWT error persists after retries; signing out');
           try { await supabase.auth.signOut({ scope: 'local' }); } catch (e) { console.warn('Local signOut failed', e); }
         }
+        
         clearTimeout(fetchTimeout);
         setUser(null);
         setProfile(null);
