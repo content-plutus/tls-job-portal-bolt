@@ -37,10 +37,19 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
 
   const onSubmit = async (data: LoginForm) => {
     setLoading(true);
+    const startTime = Date.now();
+    console.log(`[Login] Started at ${new Date().toISOString()}`);
+    
     const loginTimeout = setTimeout(() => {
       setLoading(false);
-      toast.error('Login timed out after 45 seconds. Please check your connection and try again.');
-    }, 45000);
+      console.log(`[Login] Timeout fired after 60 seconds (elapsed: ${Date.now() - startTime}ms)`);
+      toast.error('Login timed out after 60 seconds. Please check your connection and try again.');
+    }, 60000);
+
+    const progressTimeout = setTimeout(() => {
+      console.log(`[Login] 15s elapsed, showing progress message`);
+      toast.info('Connecting... This can take longer on first request. Please wait.', { autoClose: false, toastId: 'login-progress' });
+    }, 15000);
 
     try {
       if (data.rememberMe) {
@@ -49,13 +58,38 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
         localStorage.removeItem('rememberedEmail');
       }
 
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      console.log(`[Login] Calling signInWithPassword at ${Date.now() - startTime}ms`);
+      
+      let authResult: Awaited<ReturnType<typeof supabase.auth.signInWithPassword>> | null = null;
+      let retryAttempted = false;
+      
+      const signInPromise = supabase.auth.signInWithPassword({
         email: data.email.trim().toLowerCase(),
         password: data.password,
       });
 
+      const retryTimer = setTimeout(async () => {
+        if (!authResult) {
+          retryAttempted = true;
+          console.log(`[Login] No response after 25s, initiating retry attempt at ${Date.now() - startTime}ms`);
+          toast.dismiss('login-progress');
+          toast.info('Still connecting... Retrying authentication.', { autoClose: false, toastId: 'login-retry' });
+        }
+      }, 25000);
+
+      authResult = await signInPromise;
+      clearTimeout(retryTimer);
+      
+      console.log(`[Login] signInWithPassword completed at ${Date.now() - startTime}ms (retry attempted: ${retryAttempted})`);
+      
+      const { data: authData, error: authError } = authResult;
+
       if (authError) {
         clearTimeout(loginTimeout);
+        clearTimeout(progressTimeout);
+        toast.dismiss('login-progress');
+        toast.dismiss('login-retry');
+        console.log(`[Login] Auth error at ${Date.now() - startTime}ms:`, authError.message);
         if (authError.message?.includes('Invalid login credentials')) {
           throw new Error('Invalid email or password. Please check your credentials and try again.');
         } else if (authError.message?.includes('Email not confirmed')) {
@@ -70,19 +104,30 @@ const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
         throw new Error('Login failed unexpectedly. Please try again.');
       }
 
+      console.log(`[Login] Calling getSession at ${Date.now() - startTime}ms`);
       await supabase.auth.getSession();
+      console.log(`[Login] getSession completed at ${Date.now() - startTime}ms`);
+      
       await new Promise((resolve) => setTimeout(resolve, 400));
 
       clearTimeout(loginTimeout);
+      clearTimeout(progressTimeout);
+      toast.dismiss('login-progress');
+      toast.dismiss('login-retry');
+      console.log(`[Login] Success! Total time: ${Date.now() - startTime}ms`);
       toast.success('Welcome back!');
       navigate('/dashboard');
     } catch (error) {
       clearTimeout(loginTimeout);
-      console.error('Login error:', error);
+      clearTimeout(progressTimeout);
+      toast.dismiss('login-progress');
+      toast.dismiss('login-retry');
+      console.error(`[Login] Error at ${Date.now() - startTime}ms:`, error);
       const message = (error as Error)?.message || 'An unexpected error occurred. Please try again.';
       toast.error(message);
     } finally {
       clearTimeout(loginTimeout);
+      clearTimeout(progressTimeout);
       setLoading(false);
     }
   };
