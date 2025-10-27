@@ -59,6 +59,8 @@ WHERE user_id = (SELECT id FROM public.users WHERE email = 'user@example.com')
   AND month = DATE_TRUNC('month', CURRENT_DATE)::DATE;
 ```
 
+**Note:** Subscriptions with `subscription_end` dates are automatically downgraded to free tier when expired. See [SUBSCRIPTION_EXPIRY.md](docs/SUBSCRIPTION_EXPIRY.md) for details.
+
 ### Reset User Application Limit
 
 ```sql
