@@ -116,8 +116,8 @@ WHERE pu.id IS NULL;
 
 -- If missing, trigger will create on next login
 -- Or manually create:
-INSERT INTO public.users (id, email, role, subscription_tier, is_verified)
-SELECT id, email, 'job_seeker', 'free', email_confirmed_at IS NOT NULL
+INSERT INTO public.users (id, email, role, subscription_tier, is_verified, password_hash)
+SELECT id, email, 'job_seeker', 'free', email_confirmed_at IS NOT NULL, ''
 FROM auth.users
 WHERE id = 'USER_ID_HERE';
 ```

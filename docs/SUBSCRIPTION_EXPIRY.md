@@ -238,17 +238,18 @@ supabase/migrations/20251027000001_subscription_expiry_automation.sql
 ### Create Test Users
 
 ```sql
--- Create user with expired subscription
-INSERT INTO public.users (email, subscription_tier, subscription_start, subscription_end)
+-- Create test users with expired subscription
+INSERT INTO public.users (email, password_hash, subscription_tier, subscription_start, subscription_end)
 VALUES 
-  ('test-expired@example.com', 'silver', CURRENT_DATE - INTERVAL '7 days', CURRENT_DATE - INTERVAL '1 day'),
-  ('test-active@example.com', 'gold', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days');
+  ('test-expired@example.com', '', 'silver', CURRENT_DATE - INTERVAL '7 days', CURRENT_DATE - INTERVAL '1 day'),
+  ('test-active@example.com', '', 'gold', CURRENT_DATE, CURRENT_DATE + INTERVAL '30 days');
 
 -- Run downgrade function
 SELECT public.downgrade_expired_subscriptions();
 
 -- Verify: test-expired should be free, test-active should stay gold
-SELECT email, subscription_tier, subscription_end FROM public.users
+SELECT email, subscription_tier, subscription_start, subscription_end 
+FROM public.users
 WHERE email LIKE 'test-%@example.com';
 ```
 
