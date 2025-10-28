@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { ArrowLeft, MapPin, Briefcase, DollarSign, Calendar, Building2, Heart, Share2 } from 'lucide-react';
@@ -19,14 +19,9 @@ export default function JobDetailPage() {
   const [coverLetter, setCoverLetter] = useState('');
   const [applying, setApplying] = useState(false);
 
-  useEffect(() => {
-    if (id) {
-      fetchJob();
-    }
-  }, [id]);
-
-  async function fetchJob() {
+  const fetchJob = useCallback(async () => {
     try {
+      setLoading(true);
       const { data, error } = await supabase
         .from('jobs')
         .select('*')
@@ -40,14 +35,20 @@ export default function JobDetailPage() {
         .from('jobs')
         .update({ views_count: (data.views_count || 0) + 1 })
         .eq('id', id);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error fetching job:', error);
       toast.error('Job not found');
       navigate('/jobs');
     } finally {
       setLoading(false);
     }
-  }
+  }, [id, navigate]);
+
+  useEffect(() => {
+    if (id) {
+      fetchJob();
+    }
+  }, [id, fetchJob]);
 
   async function handleApply() {
     if (!user) {
@@ -75,10 +76,12 @@ export default function JobDetailPage() {
       toast.success('Application submitted successfully!');
       setShowApplyModal(false);
       navigate('/dashboard');
-    } catch (error: any) {
-      if (error.code === '23505') {
+    } catch (error: unknown) {
+      const isDuplicate = typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505';
+      if (isDuplicate) {
         toast.error('You have already applied to this job');
       } else {
+        console.error('Error submitting application:', error);
         toast.error('Failed to submit application');
       }
     } finally {

@@ -6,7 +6,6 @@ import { Mail, Lock, ArrowLeft, Eye, EyeOff, Chrome } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import Button from '../../components/ui/Button';
-import Input from '../../components/ui/Input';
 import Card from '../../components/ui/Card';
 import ParticleBackground from '../../components/3d/ParticleBackground';
 
@@ -21,15 +20,12 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [socialLoading, setSocialLoading] = useState<'google' | null>(null);
-  const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm<LoginForm>({
+  const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>({
     defaultValues: {
       email: localStorage.getItem('rememberedEmail') || '',
       rememberMe: localStorage.getItem('rememberedEmail') ? true : false,
     },
   });
-
-  const emailValue = watch('email');
-  const rememberMeValue = watch('rememberMe');
 
   useEffect(() => {
     const emailInput = document.getElementById('email-input') as HTMLInputElement;
@@ -138,10 +134,11 @@ export default function LoginPage() {
         toast.success('Welcome back!');
         navigate('/dashboard');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(loginTimeout);
+      const message = error instanceof Error ? error.message : 'An unexpected error occurred. Please try again.';
       console.error('Login error:', error);
-      toast.error(error.message || 'An unexpected error occurred. Please try again.');
+      toast.error(message);
     } finally {
       clearTimeout(loginTimeout);
       setLoading(false);
@@ -161,9 +158,10 @@ export default function LoginPage() {
       if (error) {
         throw error;
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to login with Google. Please try again.';
       console.error('Google login error:', error);
-      toast.error(error.message || 'Failed to login with Google. Please try again.');
+      toast.error(message);
       setSocialLoading(null);
     }
   };

@@ -17,6 +17,7 @@ export default function JobsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [totalJobCount, setTotalJobCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -35,7 +36,7 @@ export default function JobsPage() {
   // Access control constants
   const FREE_JOB_LIMIT = 20;
   const isFreeUser = !user || user.subscription_tier === 'free';
-  const displayedJobs = isFreeUser ? jobs.slice(0, FREE_JOB_LIMIT) : jobs;
+  const displayedJobs = isFreeUser ? filteredJobs.slice(0, FREE_JOB_LIMIT) : filteredJobs;
   const hiddenJobsCount = isFreeUser ? Math.max(0, totalJobCount - FREE_JOB_LIMIT) : 0;
 
   // Indian-specific filter options
@@ -68,6 +69,65 @@ export default function JobsPage() {
   const userTier = user?.subscription_tier || 'free';
   const userId = user?.id || null;
   const userTierIndex = TIER_ORDER.indexOf(userTier);
+
+  const applyFilters = useCallback((jobsToFilter: Job[]) => {
+    let filtered = [...jobsToFilter];
+
+    if (searchQuery) {
+      const queryLower = searchQuery.toLowerCase();
+      filtered = filtered.filter(job =>
+        job.title.toLowerCase().includes(queryLower) ||
+        job.company.toLowerCase().includes(queryLower) ||
+        job.location?.toLowerCase().includes(queryLower)
+      );
+    }
+
+    if (selectedLocation) {
+      filtered = filtered.filter(job => job.location?.includes(selectedLocation));
+    }
+
+    if (selectedJobType) {
+      filtered = filtered.filter(job => job.job_type === selectedJobType);
+    }
+
+    if (selectedCategory) {
+      filtered = filtered.filter(job => job.category === selectedCategory);
+    }
+
+    if (selectedExperience) {
+      const expKeywords = selectedExperience.toLowerCase();
+      filtered = filtered.filter(job => {
+        const titleLower = job.title.toLowerCase();
+        const descriptionLower = job.description?.toLowerCase() || '';
+        return titleLower.includes(expKeywords) || descriptionLower.includes(expKeywords);
+      });
+    }
+
+    if (selectedOrgType) {
+      const orgLower = selectedOrgType.toLowerCase();
+      filtered = filtered.filter(job => {
+        const companyLower = job.company.toLowerCase();
+        const descriptionLower = job.description?.toLowerCase() || '';
+        return companyLower.includes(orgLower) || descriptionLower.includes(orgLower);
+      });
+    }
+
+    if (selectedSalaryRange && selectedSalaryRange !== 'Not Disclosed') {
+      filtered = filtered.filter(job => job.compensation && job.compensation.includes('₹'));
+    }
+
+    if (barRegistrationRequired) {
+      filtered = filtered.filter(job => {
+        const descriptionLower = job.description?.toLowerCase() || '';
+        const jobWithBarInfo = job as Job & { bar_registration_required?: boolean | null };
+        const barRequirement = typeof jobWithBarInfo.bar_registration_required === 'boolean' ? jobWithBarInfo.bar_registration_required : null;
+        const requiresBar = barRequirement ?? (descriptionLower.includes('bar registration') || descriptionLower.includes('bar council'));
+        return barRegistrationRequired === 'required' ? Boolean(requiresBar) : !requiresBar;
+      });
+    }
+
+    return filtered;
+  }, [barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange]);
 
   const fetchJobs = useCallback(async (pageToLoad: number, append = false) => {
     const isAppending = append && pageToLoad > 0;
@@ -143,8 +203,22 @@ export default function JobsPage() {
         tier_requirement: job.tier_requirement || 'free'
       }));
 
+      const filteredByTier = normalizedJobs.filter(job => {
+        const jobTier = (job.tier_requirement || 'free') as SubscriptionTier;
+        const jobTierIndex = TIER_ORDER.indexOf(jobTier);
+        return jobTierIndex === -1 || jobTierIndex <= effectiveTierIndex;
+      });
+
+      if (!isAppending) {
+        console.log(`✅ Fetched ${normalizedJobs.length} jobs, showing ${filteredByTier.length} for ${user ? userTier : 'anonymous (free)'} tier`);
+      }
+
       setTotalJobCount(count || 0);
-      setJobs(prev => (isAppending ? [...prev, ...normalizedJobs] : normalizedJobs));
+      setJobs(prev => {
+        const nextJobs = isAppending ? [...prev, ...filteredByTier] : filteredByTier;
+        setFilteredJobs(applyFilters(nextJobs));
+        return nextJobs;
+      });
       setPage(pageToLoad);
 
       const totalLoaded = (pageToLoad + 1) * PAGE_SIZE;
@@ -154,6 +228,7 @@ export default function JobsPage() {
       toast.error('Failed to load jobs. Please refresh the page.');
       if (!isAppending) {
         setJobs([]);
+        setFilteredJobs([]);
       }
       setHasMore(false);
     } finally {
@@ -163,14 +238,19 @@ export default function JobsPage() {
         setLoading(false);
       }
     }
-  }, [barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange, userId, userTierIndex]);
+  }, [applyFilters, barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange, user, userId, userTier, userTierIndex]);
 
   useEffect(() => {
     setPage(0);
     setHasMore(true);
     setJobs([]);
+    setFilteredJobs([]);
     fetchJobs(0, false);
   }, [fetchJobs]);
+
+  useEffect(() => {
+    setFilteredJobs(applyFilters(jobs));
+  }, [applyFilters, jobs]);
 
   function clearAllFilters() {
     setSearchQuery('');
@@ -188,13 +268,13 @@ export default function JobsPage() {
     fetchJobs(nextPage, true);
   };
   const getTierBadgeColor = (tier: SubscriptionTier) => {
-    const colors = {
+    const colors: Record<string, string> = {
       free: 'bg-gray-500',
       silver: 'bg-gray-400',
       gold: 'bg-amber-500',
       platinum: 'bg-purple-500'
     };
-    return colors[tier];
+    return colors[tier] ?? 'bg-gray-500';
   };
 
   return (

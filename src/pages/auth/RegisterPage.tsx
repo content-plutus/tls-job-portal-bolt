@@ -80,9 +80,10 @@ export default function RegisterPage() {
         toast.success('Account created successfully!');
         navigate('/dashboard');
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to create account. Please try again.';
       console.error('Registration error:', error);
-      toast.error(error.message || 'Failed to create account. Please try again.');
+      toast.error(message);
     } finally {
       setLoading(false);
     }

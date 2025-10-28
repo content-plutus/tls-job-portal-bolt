@@ -1,6 +1,59 @@
-# CSV Import Script for Jobs Data
+# Scripts Documentation
 
-This script imports job data from a CSV file into your Supabase database.
+Utility scripts for managing the TLS Job Portal.
+
+## User Management
+
+### Create User Script (`create-user.js`)
+
+Create new users via Supabase Auth with automatic profile and application limits setup.
+
+#### Quick Start
+
+**Interactive Mode (Recommended):**
+```bash
+npm run create-user
+```
+
+**Command-Line Mode:**
+```bash
+# Create free tier user (default)
+npm run create-user -- user@example.com Password123
+
+# Create silver tier user
+npm run create-user -- user@example.com Password123 silver
+
+# Create gold tier employer
+npm run create-user -- employer@example.com Password123 gold employer
+```
+
+#### Subscription Tiers
+
+| Tier     | Applications/Month | 
+|----------|-------------------|
+| free     | 5                 |
+| silver   | 20                |
+| gold     | 50                |
+| platinum | 999999            |
+
+#### Roles
+- `job_seeker` - Default for applicants
+- `employer` - Companies posting jobs
+- `admin` - Administrative access
+
+#### What It Does
+1. Creates user in Supabase Auth
+2. Triggers auto-create profile in `public.profiles`
+3. Triggers auto-create application limits based on tier
+4. Verifies everything was created successfully
+
+---
+
+## Job Management
+
+### CSV Import Script (`import-jobs.js`)
+
+Import job data from a CSV file into your Supabase database.
 
 ## Prerequisites
 
