@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Building2, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
+import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import { Job, SubscriptionTier } from '../../types';
@@ -9,6 +9,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { getCompanyLogo, getCompanyInitials, getCompanyGradient } from '../../utils/companyLogos';
+
+const TIER_ORDER: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
 
 export default function JobsPage() {
   const navigate = useNavigate();
@@ -60,20 +62,10 @@ export default function JobsPage() {
     '₹2-5 Lakhs', '₹5-10 Lakhs', '₹10-20 Lakhs', '₹20-50 Lakhs',
     '₹50 Lakhs - 1 Crore', '₹1+ Crore', 'Not Disclosed'
   ];
-  const tierOrder: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
   const userTier = user?.subscription_tier || 'free';
-  const userTierIndex = tierOrder.indexOf(userTier);
+  const userTierIndex = TIER_ORDER.indexOf(userTier);
 
-  useEffect(() => {
-    fetchJobs();
-
-  }, [user]);
-
-  useEffect(() => {
-    filterJobs();
-  }, [jobs, searchQuery, selectedLocation, selectedJobType, selectedCategory, selectedExperience, selectedOrgType, selectedSalaryRange, barRegistrationRequired]);
-
-  async function fetchJobs() {
+  const fetchJobs = useCallback(async () => {
     console.log('🔍 Fetching jobs...', { user, userTier, userTierIndex });
 
     try {
@@ -107,7 +99,7 @@ export default function JobsPage() {
 
       const filteredByTier = (data || []).filter(job => {
         const jobTier = job.tier_requirement || 'free';
-        const jobTierIndex = tierOrder.indexOf(jobTier as SubscriptionTier);
+        const jobTierIndex = TIER_ORDER.indexOf(jobTier as SubscriptionTier);
         return jobTierIndex !== -1 && jobTierIndex <= effectiveTierIndex;
       });
 
@@ -115,7 +107,7 @@ export default function JobsPage() {
 
       setJobs(filteredByTier);
       setFilteredJobs(filteredByTier);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('❌ Error fetching jobs:', error);
       toast.error('Failed to load jobs. Please refresh the page.');
       setJobs([]);
@@ -123,9 +115,9 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [user, userTier, userTierIndex]);
 
-  function filterJobs() {
+  const filterJobs = useCallback(() => {
     let filtered = [...jobs];
 
     if (searchQuery) {
@@ -171,8 +163,24 @@ export default function JobsPage() {
       );
     }
 
+    if (barRegistrationRequired) {
+      filtered = filtered.filter(job => {
+        const description = job.description?.toLowerCase() || '';
+        const requiresBar = description.includes('bar registration') || description.includes('bar council');
+        return barRegistrationRequired === 'yes' ? requiresBar : !requiresBar;
+      });
+    }
+
     setFilteredJobs(filtered);
-  }
+  }, [jobs, searchQuery, selectedLocation, selectedJobType, selectedCategory, selectedExperience, selectedOrgType, selectedSalaryRange, barRegistrationRequired]);
+
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
+
+  useEffect(() => {
+    filterJobs();
+  }, [filterJobs]);
 
   function clearAllFilters() {
     setSearchQuery('');

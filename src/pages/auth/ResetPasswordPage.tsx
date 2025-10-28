@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { motion } from 'framer-motion';
@@ -25,15 +25,7 @@ export default function ResetPasswordPage() {
 
   const passwordValue = watch('password', '');
 
-  useEffect(() => {
-    checkResetToken();
-  }, []);
-
-  useEffect(() => {
-    calculatePasswordStrength(passwordValue);
-  }, [passwordValue]);
-
-  const checkResetToken = async () => {
+  const checkResetToken = useCallback(async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -43,13 +35,13 @@ export default function ResetPasswordPage() {
         setIsValidToken(false);
         toast.error('Invalid or expired reset link. Please request a new one.');
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Token validation error:', error);
       setIsValidToken(false);
     }
-  };
+  }, []);
 
-  const calculatePasswordStrength = (password: string) => {
+  const calculatePasswordStrength = useCallback((password: string) => {
     let strength = 0;
     if (password.length >= 8) strength += 25;
     if (password.length >= 12) strength += 25;
@@ -57,7 +49,15 @@ export default function ResetPasswordPage() {
     if (/[0-9]/.test(password)) strength += 12.5;
     if (/[^a-zA-Z0-9]/.test(password)) strength += 12.5;
     setPasswordStrength(strength);
-  };
+  }, []);
+
+  useEffect(() => {
+    checkResetToken();
+  }, [checkResetToken]);
+
+  useEffect(() => {
+    calculatePasswordStrength(passwordValue);
+  }, [calculatePasswordStrength, passwordValue]);
 
   const getStrengthColor = () => {
     if (passwordStrength < 25) return 'bg-red-500';
@@ -93,9 +93,10 @@ export default function ResetPasswordPage() {
       setTimeout(() => {
         navigate('/login');
       }, 2000);
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to reset password. Please try again.';
       console.error('Password reset error:', error);
-      toast.error(error.message || 'Failed to reset password. Please try again.');
+      toast.error(message);
     } finally {
       setLoading(false);
     }

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { FileText, Bookmark, TrendingUp, Award, LogOut, User } from 'lucide-react';
@@ -18,13 +18,7 @@ export default function UserDashboard() {
   const [applicationCount, setApplicationCount] = useState(0);
   const [savedJobsCount, setSavedJobsCount] = useState(0);
 
-  useEffect(() => {
-    if (user) {
-      fetchDashboardData();
-    }
-  }, [user]);
-
-  async function fetchDashboardData() {
+  const fetchDashboardData = useCallback(async () => {
     try {
       const { data: apps, error: appsError } = await supabase
         .from('applications')
@@ -43,20 +37,27 @@ export default function UserDashboard() {
         .eq('user_id', user?.id);
 
       setSavedJobsCount(savedCount || 0);
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('Error fetching dashboard data:', error);
     } finally {
       setLoading(false);
     }
-  }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user) {
+      fetchDashboardData();
+    }
+  }, [user, fetchDashboardData]);
 
   async function handleLogout() {
     try {
       await supabase.auth.signOut();
       toast.success('Logged out successfully');
       navigate('/');
-    } catch (error) {
-      toast.error('Failed to logout');
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to logout. Please try again.';
+      toast.error(message);
     }
   }
 
