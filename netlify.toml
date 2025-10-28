@@ -5,3 +5,8 @@
 [build.environment]
   # Vite prefixes indicate public variables; omit them from Netlify secret scans.
   SECRETS_SCAN_OMIT_KEYS = "VITE_SUPABASE_URL,VITE_SUPABASE_ANON_KEY"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
