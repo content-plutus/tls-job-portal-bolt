@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Building2, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
+import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import { Job, SubscriptionTier } from '../../types';
@@ -10,13 +10,16 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { getCompanyLogo, getCompanyInitials, getCompanyGradient } from '../../utils/companyLogos';
 
+const TIER_ORDER: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
+const PAGE_SIZE = 20;
+
 export default function JobsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [totalJobCount, setTotalJobCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');
   const [selectedJobType, setSelectedJobType] = useState('');
@@ -26,11 +29,13 @@ export default function JobsPage() {
   const [selectedSalaryRange, setSelectedSalaryRange] = useState('');
   const [barRegistrationRequired, setBarRegistrationRequired] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
 
   // Access control constants
   const FREE_JOB_LIMIT = 20;
   const isFreeUser = !user || user.subscription_tier === 'free';
-  const displayedJobs = isFreeUser ? filteredJobs.slice(0, FREE_JOB_LIMIT) : filteredJobs;
+  const displayedJobs = isFreeUser ? jobs.slice(0, FREE_JOB_LIMIT) : jobs;
   const hiddenJobsCount = isFreeUser ? Math.max(0, totalJobCount - FREE_JOB_LIMIT) : 0;
 
   // Indian-specific filter options
@@ -60,119 +65,112 @@ export default function JobsPage() {
     '₹2-5 Lakhs', '₹5-10 Lakhs', '₹10-20 Lakhs', '₹20-50 Lakhs',
     '₹50 Lakhs - 1 Crore', '₹1+ Crore', 'Not Disclosed'
   ];
-  const tierOrder: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
   const userTier = user?.subscription_tier || 'free';
-  const userTierIndex = tierOrder.indexOf(userTier);
+  const userId = user?.id || null;
+  const userTierIndex = TIER_ORDER.indexOf(userTier);
 
-  useEffect(() => {
-    fetchJobs();
+  const fetchJobs = useCallback(async (pageToLoad: number, append = false) => {
+    const isAppending = append && pageToLoad > 0;
+    const isAuthenticated = Boolean(userId);
+    const effectiveTierIndex = isAuthenticated && userTierIndex >= 0 ? userTierIndex : 0;
+    const accessibleTiers = TIER_ORDER.slice(0, effectiveTierIndex + 1);
+    const tiersForQuery = accessibleTiers.length > 0 ? accessibleTiers : ['free'];
 
-  }, [user]);
-
-  useEffect(() => {
-    filterJobs();
-  }, [jobs, searchQuery, selectedLocation, selectedJobType, selectedCategory, selectedExperience, selectedOrgType, selectedSalaryRange, barRegistrationRequired]);
-
-  async function fetchJobs() {
-    console.log('🔍 Fetching jobs...', { user, userTier, userTierIndex });
+    if (isAppending) {
+      setLoadingMore(true);
+    } else {
+      setLoading(true);
+    }
 
     try {
-      setLoading(true);
+      const rangeStart = pageToLoad * PAGE_SIZE;
+      const rangeEnd = rangeStart + PAGE_SIZE - 1;
 
-      // First, get the total count of all active jobs
-      const { count, error: countError } = await supabase
+      let query = supabase
         .from('jobs')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'active');
+        .select('*', { count: 'exact' })
+        .eq('status', 'active')
+        .in('tier_requirement', tiersForQuery)
+        .order('posted_date', { ascending: false })
+        .range(rangeStart, rangeEnd);
 
-      if (countError) {
-        console.error('Error fetching total job count:', countError);
-      } else {
-        setTotalJobCount(count || 0);
+      const trimmedQuery = searchQuery.trim();
+      if (trimmedQuery) {
+        const sanitizedQuery = trimmedQuery.replace(/,/g, '');
+        if (sanitizedQuery) {
+          query = query.or(`title.ilike.%${sanitizedQuery}%,company.ilike.%${sanitizedQuery}%,location.ilike.%${sanitizedQuery}%`);
+        }
       }
 
-      // Then fetch the actual job data
-      const { data, error } = await supabase
-        .from('jobs')
-        .select('*')
-        .eq('status', 'active')
-        .order('posted_date', { ascending: false });
+      if (selectedLocation) {
+        query = query.ilike('location', `%${selectedLocation}%`);
+      }
+
+      if (selectedJobType) {
+        query = query.eq('job_type', selectedJobType);
+      }
+
+      if (selectedCategory) {
+        query = query.eq('category', selectedCategory);
+      }
+
+      if (selectedExperience) {
+        query = query.ilike('description', `%${selectedExperience}%`);
+      }
+
+      if (selectedOrgType) {
+        query = query.ilike('company', `%${selectedOrgType}%`);
+      }
+
+      if (selectedSalaryRange && selectedSalaryRange !== 'Not Disclosed') {
+        query = query.ilike('compensation', `%${selectedSalaryRange}%`);
+      }
+
+      if (barRegistrationRequired === 'required') {
+        query = query.eq('bar_registration_required', true);
+      } else if (barRegistrationRequired === 'not-required') {
+        query = query.eq('bar_registration_required', false);
+      }
+
+      const { data, error, count } = await query;
 
       if (error) {
-        console.error('❌ Error fetching jobs:', error);
         throw error;
       }
 
-      const effectiveTierIndex = user ? userTierIndex : 0;
+      const normalizedJobs = (data || []).map(job => ({
+        ...job,
+        tier_requirement: job.tier_requirement || 'free'
+      }));
 
-      const filteredByTier = (data || []).filter(job => {
-        const jobTier = job.tier_requirement || 'free';
-        const jobTierIndex = tierOrder.indexOf(jobTier as SubscriptionTier);
-        return jobTierIndex !== -1 && jobTierIndex <= effectiveTierIndex;
-      });
+      setTotalJobCount(count || 0);
+      setJobs(prev => (isAppending ? [...prev, ...normalizedJobs] : normalizedJobs));
+      setPage(pageToLoad);
 
-      console.log(`✅ Fetched ${data?.length || 0} jobs, showing ${filteredByTier.length} for ${user ? userTier : 'anonymous (free)'} tier`);
-
-      setJobs(filteredByTier);
-      setFilteredJobs(filteredByTier);
-    } catch (error: any) {
+      const totalLoaded = (pageToLoad + 1) * PAGE_SIZE;
+      setHasMore((count || 0) > totalLoaded);
+    } catch (error) {
       console.error('❌ Error fetching jobs:', error);
       toast.error('Failed to load jobs. Please refresh the page.');
-      setJobs([]);
-      setFilteredJobs([]);
+      if (!isAppending) {
+        setJobs([]);
+      }
+      setHasMore(false);
     } finally {
-      setLoading(false);
+      if (isAppending) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
-  }
+  }, [barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange, userId, userTierIndex]);
 
-  function filterJobs() {
-    let filtered = [...jobs];
-
-    if (searchQuery) {
-      filtered = filtered.filter(job =>
-        job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.location?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    if (selectedLocation) {
-      filtered = filtered.filter(job => job.location?.includes(selectedLocation));
-    }
-
-    if (selectedJobType) {
-      filtered = filtered.filter(job => job.job_type === selectedJobType);
-    }
-
-    if (selectedCategory) {
-      filtered = filtered.filter(job => job.category === selectedCategory);
-    }
-
-    if (selectedExperience) {
-      // This would need to be implemented based on job data structure
-      // For now, we'll filter based on job title or description containing experience keywords
-      const expKeywords = selectedExperience.toLowerCase();
-      filtered = filtered.filter(job => 
-        job.title.toLowerCase().includes(expKeywords) || 
-        job.description.toLowerCase().includes(expKeywords)
-      );
-    }
-
-    if (selectedOrgType) {
-      filtered = filtered.filter(job => 
-        job.company.toLowerCase().includes(selectedOrgType.toLowerCase()) ||
-        job.description.toLowerCase().includes(selectedOrgType.toLowerCase())
-      );
-    }
-
-    if (selectedSalaryRange && selectedSalaryRange !== 'Not Disclosed') {
-      filtered = filtered.filter(job => 
-        job.compensation && job.compensation.includes('₹')
-      );
-    }
-
-    setFilteredJobs(filtered);
-  }
+  useEffect(() => {
+    setPage(0);
+    setHasMore(true);
+    setJobs([]);
+    fetchJobs(0, false);
+  }, [fetchJobs]);
 
   function clearAllFilters() {
     setSearchQuery('');
@@ -184,6 +182,11 @@ export default function JobsPage() {
     setSelectedSalaryRange('');
     setBarRegistrationRequired('');
   }
+
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    fetchJobs(nextPage, true);
+  };
   const getTierBadgeColor = (tier: SubscriptionTier) => {
     const colors = {
       free: 'bg-gray-500',
@@ -212,7 +215,7 @@ export default function JobsPage() {
             {!user && (
               <div className="flex items-center gap-2 text-legal-gold-400 text-sm">
                 <Users className="w-4 h-4" />
-               <span>Viewing {displayedJobs.length} of {totalJobCount}+ jobs</span>
+                <span>Viewing {displayedJobs.length} of {totalJobCount}+ jobs</span>
               </div>
             )}
             {user ? (
@@ -382,7 +385,7 @@ export default function JobsPage() {
                 </div>
               </div>
 
-              {!user && filteredJobs.length > FREE_JOB_LIMIT && (
+              {!user && totalJobCount > FREE_JOB_LIMIT && (
                 <div className="mt-4 p-4 bg-legal-gold-500/10 border border-legal-gold-500/30 rounded-lg">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -543,6 +546,18 @@ export default function JobsPage() {
                 </motion.div>
               ))}
             </div>
+
+            {!isFreeUser && hasMore && (
+              <div className="flex justify-center mt-10">
+                <Button
+                  onClick={handleLoadMore}
+                  disabled={loadingMore}
+                  className="min-w-[200px]"
+                >
+                  {loadingMore ? 'Loading...' : 'Load More Jobs'}
+                </Button>
+              </div>
+            )}
 
             {/* Access Restriction CTA */}
             {!user && hiddenJobsCount > 0 && (
