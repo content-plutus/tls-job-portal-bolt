@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Building2, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
+import { Search, Filter, MapPin, Briefcase, DollarSign, Heart, Calendar, Lock, Users, ArrowRight, TrendingUp } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import { Job, SubscriptionTier } from '../../types';
@@ -10,6 +10,11 @@ import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { getCompanyLogo, getCompanyInitials, getCompanyGradient } from '../../utils/companyLogos';
 
+const TIER_ORDER: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
+const FREE_JOB_LIMIT = 20;
+const PAGE_SIZE = 18;
+const BAR_KEYWORD = '%bar registration%';
+
 export default function JobsPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -17,6 +22,9 @@ export default function JobsPage() {
   const [filteredJobs, setFilteredJobs] = useState<Job[]>([]);
   const [totalJobCount, setTotalJobCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [page, setPage] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLocation, setSelectedLocation] = useState('');
   const [selectedJobType, setSelectedJobType] = useState('');
@@ -27,8 +35,6 @@ export default function JobsPage() {
   const [barRegistrationRequired, setBarRegistrationRequired] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
-  // Access control constants
-  const FREE_JOB_LIMIT = 20;
   const isFreeUser = !user || user.subscription_tier === 'free';
   const displayedJobs = isFreeUser ? filteredJobs.slice(0, FREE_JOB_LIMIT) : filteredJobs;
   const hiddenJobsCount = isFreeUser ? Math.max(0, totalJobCount - FREE_JOB_LIMIT) : 0;
@@ -60,119 +66,151 @@ export default function JobsPage() {
     '₹2-5 Lakhs', '₹5-10 Lakhs', '₹10-20 Lakhs', '₹20-50 Lakhs',
     '₹50 Lakhs - 1 Crore', '₹1+ Crore', 'Not Disclosed'
   ];
-  const tierOrder: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
-  const userTier = user?.subscription_tier || 'free';
-  const userTierIndex = tierOrder.indexOf(userTier);
 
-  useEffect(() => {
-    fetchJobs();
-
-  }, [user]);
-
-  useEffect(() => {
-    filterJobs();
-  }, [jobs, searchQuery, selectedLocation, selectedJobType, selectedCategory, selectedExperience, selectedOrgType, selectedSalaryRange, barRegistrationRequired]);
-
-  async function fetchJobs() {
-    console.log('🔍 Fetching jobs...', { user, userTier, userTierIndex });
-
+  const fetchTotalJobCount = useCallback(async () => {
     try {
-      setLoading(true);
-
-      // First, get the total count of all active jobs
-      const { count, error: countError } = await supabase
+      const { count, error } = await supabase
         .from('jobs')
         .select('*', { count: 'exact', head: true })
         .eq('status', 'active');
 
-      if (countError) {
-        console.error('Error fetching total job count:', countError);
-      } else {
-        setTotalJobCount(count || 0);
+      if (error) {
+        console.error('Error fetching total job count:', error);
+        return;
       }
 
-      // Then fetch the actual job data
-      const { data, error } = await supabase
+      setTotalJobCount(count || 0);
+    } catch (error) {
+      console.error('Error fetching total job count:', error);
+    }
+  }, []);
+
+  const fetchJobs = useCallback(async (pageToFetch = 0, append = false) => {
+    const tierForLog = user?.subscription_tier || 'free';
+    const tierIndex = TIER_ORDER.indexOf(tierForLog);
+
+    console.log('🔍 Fetching jobs...', {
+      user,
+      tier: tierForLog,
+      tierIndex,
+      pageToFetch,
+      append
+    });
+
+    try {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+
+      const effectiveTierIndex = tierIndex >= 0 ? tierIndex : 0;
+      const accessibleTiers = TIER_ORDER.slice(0, effectiveTierIndex + 1);
+
+      let query = supabase
         .from('jobs')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('status', 'active')
-        .order('posted_date', { ascending: false });
+        .order('posted_date', { ascending: false })
+        .range(pageToFetch * PAGE_SIZE, pageToFetch * PAGE_SIZE + PAGE_SIZE - 1);
+
+      if (accessibleTiers.length > 0) {
+        const tierConditions = [`tier_requirement.in.(${accessibleTiers.join(',')})`, 'tier_requirement.is.null'];
+        query = query.or(tierConditions.join(','));
+      } else {
+        query = query.or('tier_requirement.is.null');
+      }
+
+      if (selectedLocation) {
+        query = query.ilike('location', `%${selectedLocation}%`);
+      }
+
+      if (selectedJobType) {
+        query = query.eq('job_type', selectedJobType);
+      }
+
+      if (selectedCategory) {
+        query = query.eq('category', selectedCategory);
+      }
+
+      if (selectedExperience) {
+        const experiencePattern = `%${selectedExperience}%`;
+        query = query.or(`title.ilike.${experiencePattern},description.ilike.${experiencePattern}`);
+      }
+
+      if (selectedOrgType) {
+        const organizationPattern = `%${selectedOrgType}%`;
+        query = query.or(`company.ilike.${organizationPattern},description.ilike.${organizationPattern}`);
+      }
+
+      if (selectedSalaryRange && selectedSalaryRange !== 'Not Disclosed') {
+        query = query.ilike('compensation', '%₹%');
+      }
+
+      if (barRegistrationRequired) {
+        if (barRegistrationRequired === 'required') {
+          query = query.ilike('description', BAR_KEYWORD);
+        } else if (barRegistrationRequired === 'not-required') {
+          query = query.not('description', 'ilike', BAR_KEYWORD);
+        }
+      }
+
+      if (searchQuery) {
+        const searchPattern = `%${searchQuery}%`;
+        query = query.or(
+          `title.ilike.${searchPattern},company.ilike.${searchPattern},location.ilike.${searchPattern},description.ilike.${searchPattern}`
+        );
+      }
+
+      const { data, error, count } = await query;
 
       if (error) {
         console.error('❌ Error fetching jobs:', error);
         throw error;
       }
 
-      const effectiveTierIndex = user ? userTierIndex : 0;
+      const sanitizedData = (data || []).map(job => ({
+        ...job,
+        tier_requirement: (job.tier_requirement || 'free') as SubscriptionTier
+      }));
 
-      const filteredByTier = (data || []).filter(job => {
-        const jobTier = job.tier_requirement || 'free';
-        const jobTierIndex = tierOrder.indexOf(jobTier as SubscriptionTier);
-        return jobTierIndex !== -1 && jobTierIndex <= effectiveTierIndex;
-      });
+      setJobs(prevJobs => (append ? [...prevJobs, ...sanitizedData] : sanitizedData));
+      setFilteredJobs(prevJobs => (append ? [...prevJobs, ...sanitizedData] : sanitizedData));
 
-      console.log(`✅ Fetched ${data?.length || 0} jobs, showing ${filteredByTier.length} for ${user ? userTier : 'anonymous (free)'} tier`);
+      const totalRecords = count || 0;
+      const isFreeTierUser = !user || user.subscription_tier === 'free';
+      const moreAvailable = totalRecords > (pageToFetch + 1) * PAGE_SIZE;
+      setHasMore(!isFreeTierUser && moreAvailable);
+      setPage(pageToFetch);
 
-      setJobs(filteredByTier);
-      setFilteredJobs(filteredByTier);
+      console.log(`✅ Loaded page ${pageToFetch}, received ${sanitizedData.length} jobs (total matching: ${totalRecords})`);
     } catch (error: any) {
       console.error('❌ Error fetching jobs:', error);
       toast.error('Failed to load jobs. Please refresh the page.');
-      setJobs([]);
-      setFilteredJobs([]);
+      if (!append) {
+        setJobs([]);
+        setFilteredJobs([]);
+      }
     } finally {
-      setLoading(false);
+      if (append) {
+        setLoadingMore(false);
+      } else {
+        setLoading(false);
+      }
     }
-  }
+  }, [barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange, user]);
 
-  function filterJobs() {
-    let filtered = [...jobs];
+  useEffect(() => {
+    fetchTotalJobCount();
+  }, [fetchTotalJobCount]);
 
-    if (searchQuery) {
-      filtered = filtered.filter(job =>
-        job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.location?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
+  useEffect(() => {
+    fetchJobs(0, false);
+  }, [fetchJobs]);
 
-    if (selectedLocation) {
-      filtered = filtered.filter(job => job.location?.includes(selectedLocation));
-    }
-
-    if (selectedJobType) {
-      filtered = filtered.filter(job => job.job_type === selectedJobType);
-    }
-
-    if (selectedCategory) {
-      filtered = filtered.filter(job => job.category === selectedCategory);
-    }
-
-    if (selectedExperience) {
-      // This would need to be implemented based on job data structure
-      // For now, we'll filter based on job title or description containing experience keywords
-      const expKeywords = selectedExperience.toLowerCase();
-      filtered = filtered.filter(job => 
-        job.title.toLowerCase().includes(expKeywords) || 
-        job.description.toLowerCase().includes(expKeywords)
-      );
-    }
-
-    if (selectedOrgType) {
-      filtered = filtered.filter(job => 
-        job.company.toLowerCase().includes(selectedOrgType.toLowerCase()) ||
-        job.description.toLowerCase().includes(selectedOrgType.toLowerCase())
-      );
-    }
-
-    if (selectedSalaryRange && selectedSalaryRange !== 'Not Disclosed') {
-      filtered = filtered.filter(job => 
-        job.compensation && job.compensation.includes('₹')
-      );
-    }
-
-    setFilteredJobs(filtered);
-  }
+  const handleLoadMore = () => {
+    fetchJobs(page + 1, true);
+  };
 
   function clearAllFilters() {
     setSearchQuery('');
@@ -543,6 +581,14 @@ export default function JobsPage() {
                 </motion.div>
               ))}
             </div>
+
+            {hasMore && (
+              <div className="mt-10 flex justify-center">
+                <Button onClick={handleLoadMore} disabled={loadingMore} className="min-w-[200px]">
+                  {loadingMore ? 'Loading more jobs...' : 'Load More Jobs'}
+                </Button>
+              </div>
+            )}
 
             {/* Access Restriction CTA */}
             {!user && hiddenJobsCount > 0 && (
