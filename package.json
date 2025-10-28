@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "test": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "create-user": "node scripts/create-user.js",
+    "bulk-create-users": "node scripts/bulk-create-users.js",
     "import-jobs": "node scripts/import-jobs.js"
   },
   "dependencies": {

@@ -1,0 +1,6 @@
+email,password,subscription_tier,role,first_name,last_name
+mohit.jayendra.singh@testbook.com,TLS@5432,gold,job_seeker,Mohit,Singh
+nagender@thelegalschool.in,TLS@5432,gold,job_seeker,Nagender,Kumar
+aniket.jha@testbook.com,TLS@5432,gold,job_seeker,Aniket,Jha
+sakshi.dev@testbook.com,TLS@5432,gold,job_seeker,Sakshi,Dev
+mohit.kumar@testbook.com,TLS@5432,gold,job_seeker,Mohit,Kumar
