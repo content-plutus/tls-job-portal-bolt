@@ -15,19 +15,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, setUser, setProfile, setLoading } = useAuthStore();
 
   const fetchUserData = useCallback(async (userId: string) => {
-    const fetchTimeout = setTimeout(() => {
-      console.warn('User data fetch timed out after 8 seconds');
-      setUser(null);
-      setProfile(null);
-      setLoading(false);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
     }, 8000);
 
     try {
-      const { data: userData, error: userError } = await supabase
+      const userPromise = supabase
         .from('users')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
+
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          reject(new Error('AbortError'));
+        });
+      });
+
+      const { data: userData, error: userError } = await Promise.race([
+        userPromise,
+        timeoutPromise
+      ]);
 
       if (userError) {
         console.error('Error fetching user:', userError);
@@ -48,11 +57,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data: profileData, error: profileError } = await supabase
+      const profilePromise = supabase
         .from('profiles')
         .select('*')
         .eq('user_id', userId)
         .maybeSingle();
+
+      const { data: profileData, error: profileError } = await Promise.race([
+        profilePromise,
+        timeoutPromise
+      ]);
 
       if (profileError && profileError.code !== 'PGRST116') {
         console.error('Error fetching profile:', profileError);
@@ -61,42 +75,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(userData);
       setProfile(profileData);
     } catch (error: unknown) {
-      console.error('Error fetching user data:', error);
-      setUser(null);
-      setProfile(null);
+      if (error instanceof Error && error.message === 'AbortError') {
+        console.warn('User data fetch timed out after 8 seconds');
+        setUser(null);
+        setProfile(null);
+      } else {
+        console.error('Error fetching user data:', error);
+        setUser(null);
+        setProfile(null);
+      }
     } finally {
-      clearTimeout(fetchTimeout);
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   }, [setLoading, setProfile, setUser]);
 
   const checkUser = useCallback(async () => {
-    const checkTimeout = setTimeout(() => {
-      console.warn('Auth check timed out after 10 seconds');
-      setLoading(false);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
     }, 10000);
 
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const sessionPromise = supabase.auth.getSession();
+      const timeoutPromise = new Promise((_, reject) => {
+        controller.signal.addEventListener('abort', () => {
+          reject(new Error('AbortError'));
+        });
+      });
+
+      const { data: { session }, error: sessionError } = await Promise.race([
+        sessionPromise,
+        timeoutPromise
+      ]) as Awaited<ReturnType<typeof supabase.auth.getSession>>;
 
       if (sessionError) {
         console.error('Error getting session:', sessionError);
-        clearTimeout(checkTimeout);
         setLoading(false);
         return;
       }
 
       if (session?.user) {
         await fetchUserData(session.user.id);
-        clearTimeout(checkTimeout);
       } else {
-        clearTimeout(checkTimeout);
         setLoading(false);
       }
     } catch (error: unknown) {
-      console.error('Error checking user:', error);
-      clearTimeout(checkTimeout);
+      if (error instanceof Error && error.message === 'AbortError') {
+        console.warn('Auth check timed out after 10 seconds');
+      } else {
+        console.error('Error checking user:', error);
+      }
       setLoading(false);
+    } finally {
+      clearTimeout(timeoutId);
     }
   }, [fetchUserData, setLoading]);
 
