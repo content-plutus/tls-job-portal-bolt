@@ -15,24 +15,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, setUser, setProfile, setLoading } = useAuthStore();
 
   const fetchUserData = useCallback(async (userId: string) => {
-    const fetchTimeout = setTimeout(() => {
-      console.warn('User data fetch timed out after 8 seconds');
-      setUser(null);
-      setProfile(null);
-      setLoading(false);
+    const abortController = new AbortController();
+    
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
     }, 8000);
 
     try {
       const { data: userData, error: userError } = await supabase
         .from('users')
         .select('*')
+        .abortSignal(abortController.signal)
         .eq('id', userId)
         .maybeSingle();
 
+      clearTimeout(timeoutId);
+
       if (userError) {
-        console.error('Error fetching user:', userError);
-        if (userError.message.includes('RLS') || userError.message.includes('policy')) {
-          console.error('RLS policy may be blocking user access');
+        if (userError.message?.includes('aborted')) {
+          setUser(null);
+          setProfile(null);
+          setLoading(false);
+          return;
         }
         setUser(null);
         setProfile(null);
@@ -41,62 +45,68 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!userData) {
-        console.log('No user data found for authenticated user');
         setUser(null);
         setProfile(null);
         setLoading(false);
         return;
       }
 
-      const { data: profileData, error: profileError } = await supabase
+      const { data: profileData } = await supabase
         .from('profiles')
         .select('*')
+        .abortSignal(abortController.signal)
         .eq('user_id', userId)
         .maybeSingle();
-
-      if (profileError && profileError.code !== 'PGRST116') {
-        console.error('Error fetching profile:', profileError);
-      }
 
       setUser(userData);
       setProfile(profileData);
     } catch (error: unknown) {
-      console.error('Error fetching user data:', error);
-      setUser(null);
-      setProfile(null);
+      clearTimeout(timeoutId);
+      if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('aborted')) {
+        setUser(null);
+        setProfile(null);
+      } else {
+        setUser(null);
+        setProfile(null);
+      }
     } finally {
-      clearTimeout(fetchTimeout);
       setLoading(false);
     }
   }, [setLoading, setProfile, setUser]);
 
   const checkUser = useCallback(async () => {
-    const checkTimeout = setTimeout(() => {
-      console.warn('Auth check timed out after 10 seconds');
-      setLoading(false);
+    const abortController = new AbortController();
+    
+    const timeoutId = setTimeout(() => {
+      abortController.abort();
     }, 10000);
 
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
 
+      clearTimeout(timeoutId);
+
       if (sessionError) {
-        console.error('Error getting session:', sessionError);
-        clearTimeout(checkTimeout);
+        if (sessionError.message?.includes('aborted')) {
+          setLoading(false);
+          return;
+        }
         setLoading(false);
         return;
       }
 
       if (session?.user) {
         await fetchUserData(session.user.id);
-        clearTimeout(checkTimeout);
       } else {
-        clearTimeout(checkTimeout);
         setLoading(false);
       }
     } catch (error: unknown) {
-      console.error('Error checking user:', error);
-      clearTimeout(checkTimeout);
-      setLoading(false);
+      clearTimeout(timeoutId);
+      if ((error as Error).name === 'AbortError' || (error as Error).message?.includes('aborted')) {
+        setLoading(false);
+      } else {
+        setLoading(false);
+      }
     }
   }, [fetchUserData, setLoading]);
 
