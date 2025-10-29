@@ -11,23 +11,53 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+async function raceWithTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  label: string
+): Promise<T> {
+  const controller = new AbortController();
+  let timeoutId: number | null = null;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      controller.abort();
+      const error = new Error(`${label} timed out after ${timeoutMs}ms`);
+      error.name = 'TimeoutError';
+      reject(error);
+    }, timeoutMs);
+  });
+
+  try {
+    const result = await Promise.race([promise, timeoutPromise]);
+    return result;
+  } finally {
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, setUser, setProfile, setLoading } = useAuthStore();
 
   const fetchUserData = useCallback(async (userId: string) => {
-    const fetchTimeout = setTimeout(() => {
-      console.warn('User data fetch timed out after 8 seconds');
-      setUser(null);
-      setProfile(null);
-      setLoading(false);
-    }, 8000);
-
     try {
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      const usersController = new AbortController();
+      const usersQueryPromise = Promise.resolve(
+        supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .abortSignal(usersController.signal)
+          .maybeSingle()
+      );
+
+      const { data: userData, error: userError } = await raceWithTimeout(
+        usersQueryPromise,
+        8000,
+        'Users query'
+      );
 
       if (userError) {
         console.error('Error fetching user:', userError);
@@ -48,54 +78,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('user_id', userId)
-        .maybeSingle();
-
-      if (profileError && profileError.code !== 'PGRST116') {
-        console.error('Error fetching profile:', profileError);
-      }
-
       setUser(userData);
-      setProfile(profileData);
+
+      const profilesController = new AbortController();
+      const profilesQueryPromise = Promise.resolve(
+        supabase
+          .from('profiles')
+          .select('*')
+          .eq('user_id', userId)
+          .abortSignal(profilesController.signal)
+          .maybeSingle()
+      );
+
+      try {
+        const { data: profileData, error: profileError } = await raceWithTimeout(
+          profilesQueryPromise,
+          8000,
+          'Profiles query'
+        );
+
+        if (profileError && profileError.code !== 'PGRST116') {
+          console.error('Error fetching profile:', profileError);
+        }
+
+        setProfile(profileData);
+      } catch (error: unknown) {
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          console.warn('Profile fetch timed out, continuing with user data only');
+        } else {
+          console.error('Error fetching profile:', error);
+        }
+        setProfile(null);
+      }
     } catch (error: unknown) {
-      console.error('Error fetching user data:', error);
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        console.warn('User data fetch timed out');
+      } else {
+        console.error('Error fetching user data:', error);
+      }
       setUser(null);
       setProfile(null);
     } finally {
-      clearTimeout(fetchTimeout);
       setLoading(false);
     }
   }, [setLoading, setProfile, setUser]);
 
   const checkUser = useCallback(async () => {
-    const checkTimeout = setTimeout(() => {
-      console.warn('Auth check timed out after 10 seconds');
-      setLoading(false);
-    }, 10000);
-
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const sessionPromise = Promise.resolve(supabase.auth.getSession());
+      const { data: { session }, error: sessionError } = await raceWithTimeout(
+        sessionPromise,
+        10000,
+        'Auth check'
+      );
 
       if (sessionError) {
         console.error('Error getting session:', sessionError);
-        clearTimeout(checkTimeout);
         setLoading(false);
         return;
       }
 
       if (session?.user) {
         await fetchUserData(session.user.id);
-        clearTimeout(checkTimeout);
       } else {
-        clearTimeout(checkTimeout);
         setLoading(false);
       }
     } catch (error: unknown) {
-      console.error('Error checking user:', error);
-      clearTimeout(checkTimeout);
+      if (error instanceof Error && error.name === 'TimeoutError') {
+        console.warn('Auth check timed out');
+      } else {
+        console.error('Error checking user:', error);
+      }
       setLoading(false);
     }
   }, [fetchUserData, setLoading]);
