@@ -132,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const fetchUserDataRef = useRef<((userId: string, attempt?: number) => Promise<void>) | null>(null);
   const fallbackRetryRef = useRef<number | null>(null);
   const lastFetchRecordRef = useRef<{ userId: string; timestamp: number } | null>(null);
+  const inFlightFetchRef = useRef<Set<string>>(new Set());
 
   const getCurrentSession = useCallback(async (): Promise<Session | null> => {
     try {
@@ -237,7 +238,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
       }
+
+      if (inFlightFetchRef.current.has(userId)) {
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.info('[AuthDiag] fetch already in flight; skipping duplicate request');
+        }
+        return;
+      }
     }
+    inFlightFetchRef.current.add(userId);
     const fetchStart = performance.now();
     try {
       const usersController = new AbortController();
@@ -385,6 +394,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         markFetchComplete(userId);
       }
     } finally {
+      inFlightFetchRef.current.delete(userId);
       if (isInitialAttempt) {
         setLoading(false);
       }
