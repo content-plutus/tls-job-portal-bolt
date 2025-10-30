@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FileText, Bookmark, Award, LogOut } from 'lucide-react';
+import { FileText, Bookmark, Award, LogOut, X } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,10 +11,24 @@ import Button from '../../components/ui/Button';
 import LegalBackground3D from '../../components/3d/LegalBackground3D';
 import PrimaryNav, { PrimaryNavLogo } from '../../components/navigation/PrimaryNav';
 
+interface SavedJob {
+  id: string;
+  job_id: string;
+  saved_at: string;
+  job: {
+    id: string;
+    title: string;
+    company: string;
+    location?: string;
+    job_type?: string;
+  };
+}
+
 export default function UserDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [applications, setApplications] = useState<Application[]>([]);
+  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [applicationCount, setApplicationCount] = useState(0);
   const [savedJobsCount, setSavedJobsCount] = useState(0);
@@ -38,6 +52,16 @@ export default function UserDashboard() {
         .eq('user_id', user?.id);
 
       setSavedJobsCount(savedCount || 0);
+
+      const { data: savedJobsData, error: savedJobsError } = await supabase
+        .from('saved_jobs')
+        .select('id, job_id, saved_at, job:jobs!inner(id, title, company, location, job_type)')
+        .eq('user_id', user?.id)
+        .order('saved_at', { ascending: false })
+        .limit(5);
+
+      if (savedJobsError) throw savedJobsError;
+      setSavedJobs((savedJobsData as unknown as SavedJob[]) || []);
     } catch (error: unknown) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -58,6 +82,25 @@ export default function UserDashboard() {
       navigate('/');
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Failed to logout. Please try again.';
+      toast.error(message);
+    }
+  }
+
+  async function handleUnsaveJob(savedJobId: string, jobTitle: string) {
+    try {
+      const { error } = await supabase
+        .from('saved_jobs')
+        .delete()
+        .eq('id', savedJobId)
+        .eq('user_id', user?.id);
+
+      if (error) throw error;
+
+      setSavedJobs(prev => prev.filter(sj => sj.id !== savedJobId));
+      setSavedJobsCount(prev => Math.max(0, prev - 1));
+      toast.success(`Removed "${jobTitle}" from saved jobs`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Failed to unsave job';
       toast.error(message);
     }
   }
@@ -234,6 +277,68 @@ export default function UserDashboard() {
                       >
                         {application.status.replace('_', ' ')}
                       </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+          className="mt-8"
+        >
+          <Card glass className="p-6">
+            <h2 className="text-2xl font-bold text-white mb-6">Recent Saved Jobs</h2>
+
+            {loading ? (
+              <div className="text-center py-8">
+                <div className="w-8 h-8 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mx-auto" />
+              </div>
+            ) : savedJobs.length === 0 ? (
+              <div className="text-center py-12">
+                <Bookmark className="w-16 h-16 text-gray-500 mx-auto mb-4" />
+                <p className="text-gray-300 mb-4">No saved jobs yet. Browse jobs to save opportunities</p>
+                <Button onClick={() => navigate('/jobs')}>Browse Jobs</Button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {savedJobs.map((savedJob) => (
+                  <div
+                    key={savedJob.id}
+                    className="flex items-center justify-between p-4 rounded-lg bg-white/5 hover:bg-white/10 transition-colors group"
+                  >
+                    <div
+                      className="flex items-center gap-4 flex-1 cursor-pointer"
+                      onClick={() => navigate(`/jobs/${savedJob.job_id}`)}
+                    >
+                      <div className="bg-gradient-to-br from-amber-500 to-orange-500 w-12 h-12 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Bookmark className="w-6 h-6 text-white" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-white font-medium mb-1 truncate">
+                          {savedJob.job?.title}
+                        </h3>
+                        <p className="text-gray-400 text-sm">{savedJob.job?.company}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-gray-400 text-sm">
+                        {new Date(savedJob.saved_at).toLocaleDateString()}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleUnsaveJob(savedJob.id, savedJob.job?.title);
+                        }}
+                        className="p-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors opacity-0 group-hover:opacity-100"
+                        title="Remove from saved jobs"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
                 ))}
