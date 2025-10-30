@@ -71,7 +71,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!userData) {
-        console.log('No user data found for authenticated user');
         setUser(null);
         setProfile(null);
         setLoading(false);

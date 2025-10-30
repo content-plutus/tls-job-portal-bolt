@@ -210,10 +210,6 @@ export default function JobsPage() {
         return jobTierIndex === -1 || jobTierIndex <= effectiveTierIndex;
       });
 
-      if (!isAppending) {
-        console.log(`✅ Fetched ${normalizedJobs.length} jobs, showing ${filteredByTier.length} for ${user ? userTier : 'anonymous (free)'} tier`);
-      }
-
       setTotalJobCount(count || 0);
       setJobs(prev => {
         const nextJobs = isAppending ? [...prev, ...filteredByTier] : filteredByTier;
