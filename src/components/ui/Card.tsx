@@ -1,7 +1,9 @@
-import { HTMLAttributes } from 'react';
+import type { ComponentPropsWithoutRef } from 'react';
 import { motion } from 'framer-motion';
 
-interface CardProps extends HTMLAttributes<HTMLDivElement> {
+type MotionDivProps = ComponentPropsWithoutRef<typeof motion.div>;
+
+interface CardProps extends MotionDivProps {
   hover?: boolean;
   glass?: boolean;
 }
