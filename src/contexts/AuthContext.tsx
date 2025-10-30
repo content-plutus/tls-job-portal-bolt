@@ -16,15 +16,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_DIAGNOSTICS_ENABLED = import.meta.env.VITE_ENABLE_AUTH_DIAGNOSTICS === 'true';
 
 const FETCH_RETRY_DELAYS = [800, 2000];
-const SESSION_RETRY_DELAYS = [800, 2000];
+const SESSION_RETRY_DELAYS = [1200, 3000];
 const MAX_FETCH_RETRIES = FETCH_RETRY_DELAYS.length;
 const MAX_SESSION_RETRIES = SESSION_RETRY_DELAYS.length;
 const FALLBACK_TOAST_ID = 'auth-fallback-warning';
 const RETRY_TOAST_ID = 'auth-fetch-retry';
 
-const USERS_QUERY_TIMEOUT_MS = 18000;
-const PROFILES_QUERY_TIMEOUT_MS = 15000;
-const SESSION_QUERY_TIMEOUT_MS = 15000;
+const USERS_QUERY_TIMEOUT_MS = 20000;
+const PROFILES_QUERY_TIMEOUT_MS = 18000;
+const SESSION_QUERY_TIMEOUT_MS = 45000;
 
 const FALLBACK_RETRY_DELAY_MS = 7000;
 
@@ -159,8 +159,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, FALLBACK_RETRY_DELAY_MS);
   }, []);
 
+  type FallbackReason = 'timeout' | 'error' | 'missing' | 'session-timeout' | 'session-error';
+
   const applySessionFallback = useCallback(
-    async (userId: string, reason: 'timeout' | 'error' | 'missing') => {
+    async (userId: string, reason: FallbackReason, options?: { silent?: boolean }) => {
       const session = await getCurrentSession();
       const sessionUser = session?.user;
 
@@ -181,13 +183,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn(`[AuthDiag] applying session fallback due to ${reason}`);
       }
 
-      const messageMap: Record<typeof reason, string> = {
-        timeout: 'Connection timed out while fetching your account. Showing cached data.',
-        error: 'We hit a temporary error loading your account. Showing cached data.',
-        missing: 'Your account data is still provisioning. Showing cached data.',
-      };
+      if (!options?.silent) {
+        const messageMap: Partial<Record<FallbackReason, string>> = {
+          timeout: 'Connection timed out while fetching your account. Showing cached data.',
+          error: 'We hit a temporary error loading your account. Showing cached data.',
+          missing: 'Your account data is still provisioning. Showing cached data.',
+          'session-timeout': 'Still restoring your session. Showing cached data for now.',
+          'session-error': 'We had trouble confirming your session; reusing cached data.',
+        };
+        const message = messageMap[reason];
+        if (message) {
+          toast.warn(message, { toastId: FALLBACK_TOAST_ID });
+        }
+      }
 
-      toast.warn(messageMap[reason], { toastId: FALLBACK_TOAST_ID });
       const retryTarget = userId || sessionUser.id;
       if (retryTarget) {
         scheduleFallbackRetry(retryTarget);
@@ -390,7 +399,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('Auth check timed out after retries. Preserving existing session state.');
         const session = await getCurrentSession();
         if (session?.user) {
-          await applySessionFallback(session.user.id, 'timeout');
+          await applySessionFallback(session.user.id, 'session-timeout', { silent: true });
         }
       } else {
         console.error('Error checking user:', error);
@@ -399,7 +408,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         const session = await getCurrentSession();
         if (session?.user) {
-          await applySessionFallback(session.user.id, 'error');
+          await applySessionFallback(session.user.id, 'session-error', { silent: true });
         }
       }
       if (isInitialAttempt) {
