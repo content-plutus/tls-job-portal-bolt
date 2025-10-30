@@ -9,6 +9,7 @@ import { Application } from '../../types';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import LegalBackground3D from '../../components/3d/LegalBackground3D';
+import PrimaryNav, { PrimaryNavLogo } from '../../components/navigation/PrimaryNav';
 
 export default function UserDashboard() {
   const navigate = useNavigate();
@@ -86,21 +87,20 @@ export default function UserDashboard() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-legal-navy-900 via-legal-navy-800 to-legal-slate-900">
       <LegalBackground3D />
-      <nav className="relative z-10 bg-white/5 backdrop-blur-lg border-b border-legal-gold-500/20">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-          <div className="text-2xl font-bold bg-gradient-to-r from-legal-gold-500 to-legal-gold-300 bg-clip-text text-transparent">
-            LegalJobs
-          </div>
-          <div className="flex items-center gap-4">
+      <PrimaryNav
+        className="relative z-10"
+        logoSlot={<PrimaryNavLogo />}
+        rightSlot={(
+          <>
             <Button variant="ghost" onClick={() => navigate('/jobs')} className="text-white">
               Browse Jobs
             </Button>
             <Button variant="ghost" onClick={handleLogout} className="text-white">
               <LogOut className="w-5 h-5" />
             </Button>
-          </div>
-        </div>
-      </nav>
+          </>
+        )}
+      />
 
       <div className="relative z-10 container mx-auto px-6 py-8">
         <motion.div

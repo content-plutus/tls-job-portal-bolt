@@ -9,6 +9,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import Card from '../../components/ui/Card';
 import Button from '../../components/ui/Button';
 import { getCompanyLogo, getCompanyInitials, getCompanyGradient } from '../../utils/companyLogos';
+import PrimaryNav, { PrimaryNavLogo } from '../../components/navigation/PrimaryNav';
 
 const TIER_ORDER: SubscriptionTier[] = ['free', 'silver', 'gold', 'platinum'];
 const PAGE_SIZE = 20;
@@ -279,19 +280,12 @@ export default function JobsPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-legal-navy-900 via-legal-navy-800 to-legal-slate-900">
-      <nav className="bg-white/5 backdrop-blur-lg border-b border-legal-gold-500/20">
-        <div className="container mx-auto px-6 py-4 flex justify-between items-center">
-          <button
-            onClick={() => navigate('/')}
-            className="hover:opacity-80 transition-opacity"
-          >
-            <img
-              src="https://cdn.testbook.com/1760528149448-Header_Logo1.png/1760528151.png"
-              alt="LegalElite Logo"
-              className="h-8"
-            />
-          </button>
-          <div className="flex items-center gap-4">
+      <PrimaryNav
+        logoSlot={(
+          <PrimaryNavLogo onClick={() => navigate('/')} />
+        )}
+        rightSlot={(
+          <>
             {!user && (
               <div className="flex items-center gap-2 text-legal-gold-400 text-sm">
                 <Users className="w-4 h-4" />
@@ -307,9 +301,9 @@ export default function JobsPage() {
                 Sign In
               </Button>
             )}
-          </div>
-        </div>
-      </nav>
+          </>
+        )}
+      />
 
       <div className="container mx-auto px-6 py-8">
         <motion.div

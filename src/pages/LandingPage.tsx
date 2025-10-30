@@ -5,6 +5,7 @@ import LegalBackground3D from '../components/3d/LegalBackground3D';
 import PricingTable from '../components/pricing/PricingTable';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
+import PrimaryNav, { PrimaryNavLogo } from '../components/navigation/PrimaryNav';
 
 export default function LandingPage() {
   const navigate = useNavigate();
@@ -41,27 +42,30 @@ export default function LandingPage() {
       <LegalBackground3D />
 
       <div className="relative z-10">
-        <nav className="container mx-auto px-6 py-6 flex justify-between items-center">
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-          >
-            <img
-              src="https://cdn.testbook.com/1760528149448-Header_Logo1.png/1760528151.png"
-              alt="LegalElite Logo"
-              className="h-8"
-            />
-          </motion.div>
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex gap-4"
-          >
-            <Button onClick={() => navigate('/login')} className="text-white">
-              Sign In
-            </Button>
-          </motion.div>
-        </nav>
+        <PrimaryNav
+          variant="transparent"
+          containerClassName="px-6 py-6"
+          rightContainerClassName=""
+          logoSlot={(
+            <motion.div
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+            >
+              <PrimaryNavLogo className="h-8" />
+            </motion.div>
+          )}
+          rightSlot={(
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="flex gap-4"
+            >
+              <Button onClick={() => navigate('/login')} className="text-white">
+                Sign In
+              </Button>
+            </motion.div>
+          )}
+        />
 
         <section className="container mx-auto px-6 py-20 text-center">
           <motion.div
