@@ -13,12 +13,20 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const FETCH_RETRY_DELAYS = [600, 1500];
-const SESSION_RETRY_DELAYS = [600, 1500];
+const AUTH_DIAGNOSTICS_ENABLED = import.meta.env.VITE_ENABLE_AUTH_DIAGNOSTICS === 'true';
+
+const FETCH_RETRY_DELAYS = [800, 2000];
+const SESSION_RETRY_DELAYS = [800, 2000];
 const MAX_FETCH_RETRIES = FETCH_RETRY_DELAYS.length;
 const MAX_SESSION_RETRIES = SESSION_RETRY_DELAYS.length;
 const FALLBACK_TOAST_ID = 'auth-fallback-warning';
 const RETRY_TOAST_ID = 'auth-fetch-retry';
+
+const USERS_QUERY_TIMEOUT_MS = 18000;
+const PROFILES_QUERY_TIMEOUT_MS = 15000;
+const SESSION_QUERY_TIMEOUT_MS = 15000;
+
+const FALLBACK_RETRY_DELAY_MS = 7000;
 
 const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
   'free',
@@ -148,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (retryFn) {
         retryFn(userId, 0);
       }
-    }, 5000);
+    }, FALLBACK_RETRY_DELAY_MS);
   }, []);
 
   const applySessionFallback = useCallback(
@@ -169,6 +177,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setFallbackActive(true);
       setStaleSince(new Date().toISOString());
 
+      if (AUTH_DIAGNOSTICS_ENABLED) {
+        console.warn(`[AuthDiag] applying session fallback due to ${reason}`);
+      }
+
       const messageMap: Record<typeof reason, string> = {
         timeout: 'Connection timed out while fetching your account. Showing cached data.',
         error: 'We hit a temporary error loading your account. Showing cached data.',
@@ -187,6 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserData = useCallback(async (userId: string, attempt = 0): Promise<void> => {
     const isInitialAttempt = attempt === 0;
+    const fetchStart = performance.now();
     try {
       const usersController = new AbortController();
       const usersQueryPromise = Promise.resolve(
@@ -200,11 +213,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { data: userData, error: userError } = await raceWithTimeout(
         usersQueryPromise,
-        8000,
+        USERS_QUERY_TIMEOUT_MS,
         'Users query'
       );
 
+      const userDuration = Math.round(performance.now() - fetchStart);
+      if (AUTH_DIAGNOSTICS_ENABLED) {
+        console.info(`[AuthDiag] users query resolved in ${userDuration}ms (attempt ${attempt + 1})`);
+      }
+
       if (userError) {
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.warn(`[AuthDiag] users query returned error after ${userDuration}ms (attempt ${attempt + 1})`, userError);
+        }
         console.error('Error fetching user:', userError);
         if (userError.message.includes('RLS') || userError.message.includes('policy')) {
           console.error('RLS policy may be blocking user access');
@@ -219,6 +240,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!userData) {
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.warn(`[AuthDiag] users query returned no data after ${userDuration}ms (attempt ${attempt + 1})`);
+        }
         const fallbackUsed = await applySessionFallback(userId, 'missing');
         if (!fallbackUsed) {
           setUser(null);
@@ -248,11 +272,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       );
 
       try {
+        const profileStart = performance.now();
         const { data: profileData, error: profileError } = await raceWithTimeout(
           profilesQueryPromise,
-          8000,
+          PROFILES_QUERY_TIMEOUT_MS,
           'Profiles query'
         );
+
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          const profileDuration = Math.round(performance.now() - profileStart);
+          console.info(`[AuthDiag] profiles query resolved in ${profileDuration}ms (attempt ${attempt + 1})`);
+        }
 
         if (profileError && profileError.code !== 'PGRST116') {
           console.error('Error fetching profile:', profileError);
@@ -262,12 +292,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error: unknown) {
         if (error instanceof Error && error.name === 'TimeoutError') {
           console.warn('Profile fetch timed out, continuing with user data only');
+          if (AUTH_DIAGNOSTICS_ENABLED) {
+            console.warn('[AuthDiag] profiles query timed out');
+          }
         } else {
           console.error('Error fetching profile:', error);
+          if (AUTH_DIAGNOSTICS_ENABLED) {
+            console.warn('[AuthDiag] profiles query error', error);
+          }
         }
         setProfile(null);
       }
     } catch (error: unknown) {
+      const elapsed = Math.round(performance.now() - fetchStart);
       if (error instanceof Error && error.name === 'TimeoutError') {
         if (attempt < MAX_FETCH_RETRIES) {
           console.warn(`User data fetch timed out (attempt ${attempt + 1}/${MAX_FETCH_RETRIES + 1}). Retrying...`);
@@ -279,6 +316,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.warn(`[AuthDiag] users query timed out after ${elapsed}ms (attempt ${attempt + 1})`);
+        }
         console.warn('User data fetch timed out after retries. Keeping existing session state.');
         const fallbackUsed = await applySessionFallback(userId, 'timeout');
         if (!fallbackUsed) {
@@ -290,6 +330,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         console.error('Error fetching user data:', error);
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.warn(`[AuthDiag] users query threw error after ${elapsed}ms (attempt ${attempt + 1})`, error);
+        }
         const fallbackUsed = await applySessionFallback(userId, 'error');
         if (!fallbackUsed) {
           const hasSession = await ensureValidSession();
@@ -308,13 +351,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const checkUser = useCallback(async (attempt = 0): Promise<void> => {
     const isInitialAttempt = attempt === 0;
+    const sessionStart = performance.now();
     try {
       const sessionPromise = Promise.resolve(supabase.auth.getSession());
       const { data: { session }, error: sessionError } = await raceWithTimeout(
         sessionPromise,
-        10000,
+        SESSION_QUERY_TIMEOUT_MS,
         'Auth check'
       );
+
+      const sessionDuration = Math.round(performance.now() - sessionStart);
+      if (AUTH_DIAGNOSTICS_ENABLED) {
+        console.info(`[AuthDiag] session check resolved in ${sessionDuration}ms (attempt ${attempt + 1})`);
+      }
 
       if (sessionError) {
         console.error('Error getting session:', sessionError);
@@ -327,12 +376,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     } catch (error: unknown) {
+      const elapsed = Math.round(performance.now() - sessionStart);
       if (error instanceof Error && error.name === 'TimeoutError') {
         if (attempt < MAX_SESSION_RETRIES) {
           console.warn(`Auth check timed out (attempt ${attempt + 1}/${MAX_SESSION_RETRIES + 1}). Retrying...`);
           await delay(SESSION_RETRY_DELAYS[attempt] ?? SESSION_RETRY_DELAYS[SESSION_RETRY_DELAYS.length - 1]);
           await checkUser(attempt + 1);
           return;
+        }
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.warn(`[AuthDiag] session check timed out after ${elapsed}ms (attempt ${attempt + 1})`);
         }
         console.warn('Auth check timed out after retries. Preserving existing session state.');
         const session = await getCurrentSession();
@@ -341,6 +394,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         console.error('Error checking user:', error);
+        if (AUTH_DIAGNOSTICS_ENABLED) {
+          console.warn(`[AuthDiag] session check error after ${elapsed}ms (attempt ${attempt + 1})`, error);
+        }
         const session = await getCurrentSession();
         if (session?.user) {
           await applySessionFallback(session.user.id, 'error');
