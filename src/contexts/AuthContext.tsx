@@ -27,6 +27,7 @@ const PROFILES_QUERY_TIMEOUT_MS = 25000;
 const SESSION_QUERY_TIMEOUT_MS = 45000;
 
 const FALLBACK_RETRY_DELAY_MS = 7000;
+const MIN_FETCH_INTERVAL_MS = 5000;
 
 const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
   'free',
@@ -130,6 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const fetchUserDataRef = useRef<((userId: string, attempt?: number) => Promise<void>) | null>(null);
   const fallbackRetryRef = useRef<number | null>(null);
+  const lastFetchRecordRef = useRef<{ userId: string; timestamp: number } | null>(null);
 
   const getCurrentSession = useCallback(async (): Promise<Session | null> => {
     try {
@@ -146,6 +148,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return Boolean(session?.user);
   }, [getCurrentSession]);
 
+  const markFetchComplete = useCallback((userId: string) => {
+    lastFetchRecordRef.current = { userId, timestamp: Date.now() };
+  }, []);
+
   const scheduleFallbackRetry = useCallback((userId: string) => {
     if (fallbackRetryRef.current !== null) {
       window.clearTimeout(fallbackRetryRef.current);
@@ -161,12 +167,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   type FallbackReason = 'timeout' | 'error' | 'missing' | 'session-timeout' | 'session-error';
 
-const applySessionFallback = useCallback(
-    async (
-      userId: string,
-      reason: FallbackReason,
-      options?: { silent?: boolean }
-    ) => {
+  const applySessionFallback = useCallback(
+    async (userId: string, reason: FallbackReason, options?: { silent?: boolean }) => {
       const session = await getCurrentSession();
       const sessionUser = session?.user;
 
@@ -184,6 +186,7 @@ const applySessionFallback = useCallback(
       setFallbackActive(true);
       setStaleSince(new Date().toISOString());
       setLoading(false);
+      markFetchComplete(sessionUser.id);
 
       if (AUTH_DIAGNOSTICS_ENABLED) {
         console.warn(`[AuthDiag] applying session fallback due to ${reason}`);
@@ -209,11 +212,32 @@ const applySessionFallback = useCallback(
       }
       return true;
     },
-    [getCurrentSession, scheduleFallbackRetry, setFallbackActive, setProfile, setStaleSince, setUser]
+    [
+      getCurrentSession,
+      markFetchComplete,
+      scheduleFallbackRetry,
+      setFallbackActive,
+      setLoading,
+      setProfile,
+      setStaleSince,
+      setUser,
+    ]
   );
 
   const fetchUserData = useCallback(async (userId: string, attempt = 0): Promise<void> => {
     const isInitialAttempt = attempt === 0;
+    if (isInitialAttempt) {
+      const last = lastFetchRecordRef.current;
+      if (last && last.userId === userId) {
+        const elapsedSinceLast = Date.now() - last.timestamp;
+        if (elapsedSinceLast < MIN_FETCH_INTERVAL_MS) {
+          if (AUTH_DIAGNOSTICS_ENABLED) {
+            console.info(`[AuthDiag] skipping redundant user fetch (${elapsedSinceLast}ms since last success)`);
+          }
+          return;
+        }
+      }
+    }
     const fetchStart = performance.now();
     try {
       const usersController = new AbortController();
@@ -275,6 +299,7 @@ const applySessionFallback = useCallback(
         window.clearTimeout(fallbackRetryRef.current);
         fallbackRetryRef.current = null;
       }
+      markFetchComplete(userId);
 
       const profilesController = new AbortController();
       const profilesQueryPromise = Promise.resolve(
@@ -343,6 +368,7 @@ const applySessionFallback = useCallback(
             setProfile(null);
           }
         }
+        markFetchComplete(userId);
       } else {
         console.error('Error fetching user data:', error);
         if (AUTH_DIAGNOSTICS_ENABLED) {
@@ -356,13 +382,23 @@ const applySessionFallback = useCallback(
             setProfile(null);
           }
         }
+        markFetchComplete(userId);
       }
     } finally {
       if (isInitialAttempt) {
         setLoading(false);
       }
     }
-  }, [applySessionFallback, ensureValidSession, setFallbackActive, setLoading, setProfile, setStaleSince, setUser]);
+  }, [
+    applySessionFallback,
+    ensureValidSession,
+    markFetchComplete,
+    setFallbackActive,
+    setLoading,
+    setProfile,
+    setStaleSince,
+    setUser,
+  ]);
 
   const checkUser = useCallback(async (attempt = 0): Promise<void> => {
     const isInitialAttempt = attempt === 0;
