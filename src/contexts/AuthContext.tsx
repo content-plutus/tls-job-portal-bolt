@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useCallback } from 'react';
+import { toast } from 'react-toastify';
 import { supabase } from '../lib/supabase';
 import { useAuthStore } from '../store/authStore';
 import { User, Profile } from '../types';
@@ -10,6 +11,17 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const FETCH_RETRY_DELAYS = [600, 1500];
+const SESSION_RETRY_DELAYS = [600, 1500];
+const MAX_FETCH_RETRIES = FETCH_RETRY_DELAYS.length;
+const MAX_SESSION_RETRIES = SESSION_RETRY_DELAYS.length;
+
+function delay(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
 
 async function raceWithTimeout<T>(
   promise: Promise<T>,
@@ -41,7 +53,18 @@ async function raceWithTimeout<T>(
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, loading, setUser, setProfile, setLoading } = useAuthStore();
 
-  const fetchUserData = useCallback(async (userId: string) => {
+  const ensureValidSession = useCallback(async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return Boolean(session?.user);
+    } catch (error) {
+      console.error('Error validating Supabase session:', error);
+      return false;
+    }
+  }, []);
+
+  const fetchUserData = useCallback(async (userId: string, attempt = 0): Promise<void> => {
+    const isInitialAttempt = attempt === 0;
     try {
       const usersController = new AbortController();
       const usersQueryPromise = Promise.resolve(
@@ -64,16 +87,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (userError.message.includes('RLS') || userError.message.includes('policy')) {
           console.error('RLS policy may be blocking user access');
         }
+
         setUser(null);
         setProfile(null);
-        setLoading(false);
         return;
       }
 
       if (!userData) {
         setUser(null);
         setProfile(null);
-        setLoading(false);
         return;
       }
 
@@ -111,18 +133,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'TimeoutError') {
-        console.warn('User data fetch timed out');
+        if (attempt < MAX_FETCH_RETRIES) {
+          console.warn(`User data fetch timed out (attempt ${attempt + 1}/${MAX_FETCH_RETRIES + 1}). Retrying...`);
+          if (isInitialAttempt) {
+            toast.warn('Network is slow. Retrying account sync…');
+          }
+          await delay(FETCH_RETRY_DELAYS[attempt] ?? FETCH_RETRY_DELAYS[FETCH_RETRY_DELAYS.length - 1]);
+          await fetchUserData(userId, attempt + 1);
+          return;
+        }
+
+        console.warn('User data fetch timed out after retries. Keeping existing session state.');
+        toast.warn('Connection timed out fetching your account. Showing cached data.');
+        const hasSession = await ensureValidSession();
+        if (!hasSession) {
+          setUser(null);
+          setProfile(null);
+        }
       } else {
         console.error('Error fetching user data:', error);
+        const hasSession = await ensureValidSession();
+        if (!hasSession) {
+          setUser(null);
+          setProfile(null);
+        }
       }
-      setUser(null);
-      setProfile(null);
     } finally {
-      setLoading(false);
+      if (isInitialAttempt) {
+        setLoading(false);
+      }
     }
-  }, [setLoading, setProfile, setUser]);
+  }, [ensureValidSession, setLoading, setProfile, setUser]);
 
-  const checkUser = useCallback(async () => {
+  const checkUser = useCallback(async (attempt = 0): Promise<void> => {
+    const isInitialAttempt = attempt === 0;
     try {
       const sessionPromise = Promise.resolve(supabase.auth.getSession());
       const { data: { session }, error: sessionError } = await raceWithTimeout(
@@ -133,7 +177,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (sessionError) {
         console.error('Error getting session:', sessionError);
-        setLoading(false);
         return;
       }
 
@@ -144,11 +187,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error: unknown) {
       if (error instanceof Error && error.name === 'TimeoutError') {
-        console.warn('Auth check timed out');
+        if (attempt < MAX_SESSION_RETRIES) {
+          console.warn(`Auth check timed out (attempt ${attempt + 1}/${MAX_SESSION_RETRIES + 1}). Retrying...`);
+          await delay(SESSION_RETRY_DELAYS[attempt] ?? SESSION_RETRY_DELAYS[SESSION_RETRY_DELAYS.length - 1]);
+          await checkUser(attempt + 1);
+          return;
+        }
+        console.warn('Auth check timed out after retries. Preserving existing session state.');
+        toast.warn('Having trouble confirming your session. Showing cached data.');
       } else {
         console.error('Error checking user:', error);
       }
-      setLoading(false);
+      if (isInitialAttempt) {
+        setLoading(false);
+      }
     }
   }, [fetchUserData, setLoading]);
 
