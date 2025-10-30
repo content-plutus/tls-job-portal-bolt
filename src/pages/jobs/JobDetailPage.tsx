@@ -18,6 +18,10 @@ export default function JobDetailPage() {
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [coverLetter, setCoverLetter] = useState('');
   const [applying, setApplying] = useState(false);
+  const [isJobSaved, setIsJobSaved] = useState(false);
+  const [savingJob, setSavingJob] = useState(false);
+
+  const userId = user?.id;
 
   const fetchJob = useCallback(async () => {
     try {
@@ -44,11 +48,37 @@ export default function JobDetailPage() {
     }
   }, [id, navigate]);
 
+  const checkSavedStatus = useCallback(async () => {
+    if (!userId || !id) {
+      setIsJobSaved(false);
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('saved_jobs')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('job_id', id)
+        .limit(1);
+
+      if (error) throw error;
+
+      setIsJobSaved(Boolean(data && data.length > 0));
+    } catch (error) {
+      console.error('Error checking saved status:', error);
+    }
+  }, [id, userId]);
+
   useEffect(() => {
     if (id) {
       fetchJob();
     }
   }, [id, fetchJob]);
+
+  useEffect(() => {
+    checkSavedStatus();
+  }, [checkSavedStatus]);
 
   async function handleApply() {
     if (!user) {
@@ -89,6 +119,45 @@ export default function JobDetailPage() {
     }
   }
 
+  const toggleSaveJob = async () => {
+    if (!userId || !id) {
+      toast.info('Please login to save jobs');
+      navigate('/login');
+      return;
+    }
+
+    setSavingJob(true);
+
+    try {
+      if (isJobSaved) {
+        const { error } = await supabase
+          .from('saved_jobs')
+          .delete()
+          .eq('user_id', userId)
+          .eq('job_id', id);
+
+        if (error) throw error;
+
+        setIsJobSaved(false);
+        toast.success('Removed from saved jobs');
+      } else {
+        const { error } = await supabase
+          .from('saved_jobs')
+          .insert({ user_id: userId, job_id: id });
+
+        if (error && (error as { code?: string }).code !== '23505') throw error;
+
+        setIsJobSaved(true);
+        toast.success('Job saved successfully');
+      }
+    } catch (error) {
+      console.error('Error updating saved job:', error);
+      toast.error('Could not update saved jobs. Please try again.');
+    } finally {
+      setSavingJob(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center">
@@ -127,16 +196,22 @@ export default function JobDetailPage() {
                   <div>
                     <h1 className="text-3xl font-bold text-white mb-2">{job.title}</h1>
                     <p className="text-xl text-cyan-400 font-medium">{job.company}</p>
-                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <button className="p-3 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-red-400 transition-colors">
-                    <Heart className="w-5 h-5" />
-                  </button>
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(window.location.href);
-                      toast.success('Link copied to clipboard');
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={toggleSaveJob}
+                  disabled={savingJob}
+                  className={`p-3 rounded-lg transition-colors ${isJobSaved ? 'bg-legal-red-500/10 text-legal-red-400' : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-red-400'} ${savingJob ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  aria-label={isJobSaved ? 'Remove from saved jobs' : 'Save job'}
+                >
+                  <Heart className="w-5 h-5" fill={isJobSaved ? 'currentColor' : 'none'} />
+                </button>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    toast.success('Link copied to clipboard');
                     }}
                     className="p-3 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white transition-colors"
                   >

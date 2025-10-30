@@ -33,6 +33,8 @@ export default function JobsPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [page, setPage] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
+  const [savingJobIds, setSavingJobIds] = useState<Set<string>>(new Set());
 
   // Access control constants
   const FREE_JOB_LIMIT = 20;
@@ -70,6 +72,89 @@ export default function JobsPage() {
   const userTier = user?.subscription_tier || 'free';
   const userId = user?.id || null;
   const userTierIndex = TIER_ORDER.indexOf(userTier);
+
+  const fetchSavedJobs = useCallback(async () => {
+    if (!userId) {
+      setSavedJobIds(new Set());
+      return;
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('saved_jobs')
+        .select('job_id')
+        .eq('user_id', userId);
+
+      if (error) throw error;
+
+      const savedIds = new Set((data || []).map((item) => item.job_id));
+      setSavedJobIds(savedIds);
+    } catch (error) {
+      console.error('❌ Error fetching saved jobs:', error);
+      toast.error('Failed to load saved jobs. Please try again.');
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    fetchSavedJobs();
+  }, [fetchSavedJobs]);
+
+  const toggleSaveJob = useCallback(async (jobId: string) => {
+    if (!userId) {
+      toast.info('Please sign in to save jobs.');
+      navigate('/login');
+      return;
+    }
+
+    setSavingJobIds((prev) => {
+      const next = new Set(prev);
+      next.add(jobId);
+      return next;
+    });
+
+    const isSaved = savedJobIds.has(jobId);
+
+    try {
+      if (isSaved) {
+        const { error } = await supabase
+          .from('saved_jobs')
+          .delete()
+          .eq('user_id', userId)
+          .eq('job_id', jobId);
+
+        if (error) throw error;
+
+        setSavedJobIds((prev) => {
+          const next = new Set(prev);
+          next.delete(jobId);
+          return next;
+        });
+        toast.success('Removed from saved jobs.');
+      } else {
+        const { error } = await supabase
+          .from('saved_jobs')
+          .insert({ user_id: userId, job_id: jobId });
+
+        if (error && (error as { code?: string }).code !== '23505') throw error;
+
+        setSavedJobIds((prev) => {
+          const next = new Set(prev);
+          next.add(jobId);
+          return next;
+        });
+        toast.success('Job saved successfully.');
+      }
+    } catch (error) {
+      console.error('❌ Error saving job:', error);
+      toast.error('Could not update saved jobs. Please try again.');
+    } finally {
+      setSavingJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
+    }
+  }, [navigate, savedJobIds, userId]);
 
   const applyFilters = useCallback((jobsToFilter: Job[]) => {
     let filtered = [...jobsToFilter];
@@ -235,7 +320,7 @@ export default function JobsPage() {
         setLoading(false);
       }
     }
-  }, [applyFilters, barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange, user, userId, userTier, userTierIndex]);
+  }, [applyFilters, barRegistrationRequired, searchQuery, selectedCategory, selectedExperience, selectedJobType, selectedLocation, selectedOrgType, selectedSalaryRange, userId, userTierIndex]);
 
   useEffect(() => {
     setPage(0);
@@ -530,15 +615,6 @@ export default function JobsPage() {
                     className="p-6 cursor-pointer relative border border-legal-gold-500/10 hover:border-legal-gold-500/30"
                     onClick={() => navigate(`/jobs/${job.id}`)}
                   >
-                    {/* Free Tier Badge */}
-                    {job.tier_requirement === 'free' && (
-                      <div className="absolute top-4 right-4 z-10">
-                        <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30 backdrop-blur-sm">
-                          FREE
-                        </span>
-                      </div>
-                    )}
-
                     <div className="flex items-start justify-between mb-4">
                       <div className="relative w-14 h-14 rounded-lg overflow-hidden border-2 border-legal-gold-500/30">
                         <img
@@ -558,14 +634,25 @@ export default function JobsPage() {
                           {getCompanyInitials(job.company)}
                         </div>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                        }}
-                        className="text-legal-slate-400 hover:text-legal-red-500 transition-colors"
-                      >
-                        <Heart className="w-5 h-5" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {job.tier_requirement === 'free' && (
+                          <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs font-bold border border-green-500/30 backdrop-blur-sm">
+                            FREE
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSaveJob(job.id);
+                          }}
+                          disabled={savingJobIds.has(job.id)}
+                          className={`p-2 rounded-lg transition-colors ${savedJobIds.has(job.id) ? 'text-legal-red-500 bg-legal-red-500/10' : 'text-legal-slate-400 hover:text-legal-red-500 hover:bg-white/5'} ${savingJobIds.has(job.id) ? 'opacity-70 cursor-not-allowed' : ''}`}
+                          aria-label={savedJobIds.has(job.id) ? 'Remove from saved jobs' : 'Save job'}
+                        >
+                          <Heart className="w-5 h-5" fill={savedJobIds.has(job.id) ? 'currentColor' : 'none'} />
+                        </button>
+                      </div>
                     </div>
 
                     <h3 className="text-xl font-bold text-white mb-2 line-clamp-1">{job.title}</h3>
