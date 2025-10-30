@@ -15,15 +15,15 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_DIAGNOSTICS_ENABLED = import.meta.env.VITE_ENABLE_AUTH_DIAGNOSTICS === 'true';
 
-const FETCH_RETRY_DELAYS = [800, 2000];
-const SESSION_RETRY_DELAYS = [1200, 3000];
+const FETCH_RETRY_DELAYS = [1000, 2500];
+const SESSION_RETRY_DELAYS = [1500, 3500];
 const MAX_FETCH_RETRIES = FETCH_RETRY_DELAYS.length;
 const MAX_SESSION_RETRIES = SESSION_RETRY_DELAYS.length;
 const FALLBACK_TOAST_ID = 'auth-fallback-warning';
 const RETRY_TOAST_ID = 'auth-fetch-retry';
 
-const USERS_QUERY_TIMEOUT_MS = 20000;
-const PROFILES_QUERY_TIMEOUT_MS = 18000;
+const USERS_QUERY_TIMEOUT_MS = 30000;
+const PROFILES_QUERY_TIMEOUT_MS = 25000;
 const SESSION_QUERY_TIMEOUT_MS = 45000;
 
 const FALLBACK_RETRY_DELAY_MS = 7000;
@@ -161,8 +161,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   type FallbackReason = 'timeout' | 'error' | 'missing' | 'session-timeout' | 'session-error';
 
-  const applySessionFallback = useCallback(
-    async (userId: string, reason: FallbackReason, options?: { silent?: boolean }) => {
+const applySessionFallback = useCallback(
+    async (
+      userId: string,
+      reason: FallbackReason,
+      options?: { silent?: boolean }
+    ) => {
       const session = await getCurrentSession();
       const sessionUser = session?.user;
 
@@ -170,6 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setFallbackActive(false);
         setStaleSince(null);
         toast.dismiss(FALLBACK_TOAST_ID);
+        setLoading(false);
         return false;
       }
 
@@ -178,6 +183,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(null);
       setFallbackActive(true);
       setStaleSince(new Date().toISOString());
+      setLoading(false);
 
       if (AUTH_DIAGNOSTICS_ENABLED) {
         console.warn(`[AuthDiag] applying session fallback due to ${reason}`);
