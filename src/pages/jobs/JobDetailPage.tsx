@@ -259,9 +259,9 @@ export default function JobDetailPage() {
               <Button
                 size="lg"
                 className="w-full mb-4"
-                onClick={() => setShowApplyModal(true)}
+                onClick={() => window.open('https://forms.gle/h453pKoJ6knA2L348', '_blank')}
               >
-                Apply Now
+                Prepare for This Role
               </Button>
 
               {job.category && (
